@@ -52,7 +52,7 @@ require (
 require (
 	github.com/pires/go-proxyproto v0.11.0
 	github.com/prometheus/exporter-toolkit v0.15.1
-	golang.org/x/net v0.51.0
+	golang.org/x/net v0.52.0
 )
 
 require (
