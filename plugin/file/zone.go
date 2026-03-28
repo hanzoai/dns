@@ -56,9 +56,12 @@ func NewZone(name, file string) *Zone {
 func (z *Zone) Copy() *Zone {
 	z1 := NewZone(z.origin, z.file)
 	z1.TransferFrom = z.TransferFrom
-	z1.Expired = z.Expired
 
+	z.RLock()
+	z1.Expired = z.Expired
 	z1.Apex = z.Apex
+	z.RUnlock()
+
 	return z1
 }
 
@@ -66,7 +69,10 @@ func (z *Zone) Copy() *Zone {
 func (z *Zone) CopyWithoutApex() *Zone {
 	z1 := NewZone(z.origin, z.file)
 	z1.TransferFrom = z.TransferFrom
+
+	z.RLock()
 	z1.Expired = z.Expired
+	z.RUnlock()
 
 	return z1
 }
@@ -181,4 +187,16 @@ func (z *Zone) nameFromRight(qname string, i int) (string, bool) {
 		}
 	}
 	return qname[n:], false
+}
+
+func (z *Zone) hasSOA() bool {
+	z.RLock()
+	defer z.RUnlock()
+	return z.SOA != nil
+}
+
+func (z *Zone) getSOA() *dns.SOA {
+	z.RLock()
+	defer z.RUnlock()
+	return z.SOA
 }
