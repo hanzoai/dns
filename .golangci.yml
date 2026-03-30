@@ -104,7 +104,8 @@ linters:
           disabled: true
 
         - name: unused-parameter
-          disabled: true
+          arguments:
+            - allowRegex: "^_"
 
         - name: use-any
 
