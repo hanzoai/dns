@@ -101,7 +101,6 @@ linters:
         - name: unnecessary-stmt
 
         - name: unreachable-code
-          disabled: true
 
         - name: unused-parameter
           arguments:
