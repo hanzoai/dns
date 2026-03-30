@@ -78,7 +78,8 @@ linters:
         - name: increment-decrement
 
         - name: indent-error-flow
-          disabled: true
+          arguments:
+            - "preserveScope"
 
         - name: range
 
