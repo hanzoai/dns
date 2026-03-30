@@ -187,7 +187,7 @@ func TestHealthMaxFails(t *testing.T) {
 	defer func() { defaultTimeout = origTimeout }()
 	//,hcInterval = 10 * time.Millisecond
 
-	s := dnstest.NewServer(func(w dns.ResponseWriter, r *dns.Msg) {
+	s := dnstest.NewServer(func(_w dns.ResponseWriter, _r *dns.Msg) {
 		// timeout
 	})
 	defer s.Close()
@@ -294,7 +294,7 @@ func TestHealthDomain(t *testing.T) {
 
 func TestAllUpstreamsDown(t *testing.T) {
 	qs := uint32(0)
-	s := dnstest.NewServer(func(w dns.ResponseWriter, r *dns.Msg) {
+	s := dnstest.NewServer(func(_w dns.ResponseWriter, r *dns.Msg) {
 		// count non-healthcheck queries
 		if r.Question[0].Name != "." {
 			atomic.AddUint32(&qs, 1)
@@ -303,7 +303,7 @@ func TestAllUpstreamsDown(t *testing.T) {
 	})
 	defer s.Close()
 
-	s1 := dnstest.NewServer(func(w dns.ResponseWriter, r *dns.Msg) {
+	s1 := dnstest.NewServer(func(_w dns.ResponseWriter, r *dns.Msg) {
 		// count non-healthcheck queries
 		if r.Question[0].Name != "." {
 			atomic.AddUint32(&qs, 1)
