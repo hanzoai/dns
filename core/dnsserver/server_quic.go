@@ -136,6 +136,15 @@ func (s *ServerQUIC) ServeQUIC() error {
 	}
 }
 
+func acquireQUICWorker(ctx context.Context, pool chan struct{}) bool {
+	select {
+	case pool <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
 // serveQUICConnection handles a new QUIC connection. It waits for new streams
 // and passes them to serveQUICStream.
 func (s *ServerQUIC) serveQUICConnection(conn *quic.Conn) {
@@ -157,29 +166,15 @@ func (s *ServerQUIC) serveQUICConnection(conn *quic.Conn) {
 			return
 		}
 
-		// Use a bounded worker pool with context cancellation
-		select {
-		case s.streamProcessPool <- struct{}{}:
-			// Got worker slot immediately
-			go func(st *quic.Stream, cn *quic.Conn) {
-				defer func() { <-s.streamProcessPool }() // Release worker slot
-				s.serveQUICStream(st, cn)
-			}(stream, conn)
-		default:
-			// Worker pool full, check for context cancellation
-			go func(st *quic.Stream, cn *quic.Conn) {
-				select {
-				case s.streamProcessPool <- struct{}{}:
-					// Got worker slot after waiting
-					defer func() { <-s.streamProcessPool }() // Release worker slot
-					s.serveQUICStream(st, cn)
-				case <-conn.Context().Done():
-					// Connection context was cancelled while waiting
-					st.Close()
-					return
-				}
-			}(stream, conn)
+		if !acquireQUICWorker(conn.Context(), s.streamProcessPool) {
+			_ = stream.Close()
+			return
 		}
+
+		go func(st *quic.Stream, cn *quic.Conn) {
+			defer func() { <-s.streamProcessPool }()
+			s.serveQUICStream(st, cn)
+		}(stream, conn)
 	}
 }
 
@@ -227,6 +222,14 @@ func (s *ServerQUIC) serveQUICStream(stream *quic.Stream, conn *quic.Conn) {
 		remoteAddr: conn.RemoteAddr(),
 		stream:     stream,
 		Msg:        req,
+	}
+
+	if tsig := req.IsTsig(); tsig != nil {
+		if s.tsigSecret == nil {
+			w.tsigStatus = dns.ErrSecret
+		} else if _, ok := s.tsigSecret[tsig.Hdr.Name]; !ok {
+			w.tsigStatus = dns.ErrSecret
+		}
 	}
 
 	dnsCtx := context.WithValue(stream.Context(), Key{}, s.Server)
@@ -368,7 +371,6 @@ func readDOQMessage(r io.Reader) ([]byte, error) {
 	// A client or server receives a STREAM FIN before receiving all the bytes
 	// for a message indicated in the 2-octet length field.
 	// See https://www.rfc-editor.org/rfc/rfc9250#section-4.3.3-2.2
-	//nolint:gosec
 	if size != uint16(len(buf)) { // #nosec G115 -- buf length fits in uint16
 		return nil, fmt.Errorf("message size does not match 2-byte prefix")
 	}
