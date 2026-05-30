@@ -339,3 +339,52 @@ func TestTransferDrainsProducerOnClientError(t *testing.T) {
 		t.Fatal("producer goroutine did not finish; channel likely not drained on client error")
 	}
 }
+
+type nopHandler struct{}
+
+func (nopHandler) Name() string { return "nop" }
+func (nopHandler) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (int, error) {
+	return dns.RcodeSuccess, nil
+}
+
+func TestAXFRZoneMatchCaseInsensitive(t *testing.T) {
+	next := &transfererPlugin{Zone: "example.org.", Serial: 12345}
+	next.Next = nopHandler{}
+
+	tr := &Transfer{
+		Transferers: []Transferer{next},
+		xfrs:        []*xfr{{Zones: []string{"example.org."}, to: []string{"*"}}},
+		Next:        next,
+	}
+
+	ctx := context.TODO()
+	w := dnstest.NewMultiRecorder(&test.ResponseWriter{TCP: true})
+	m := new(dns.Msg)
+	m.SetAxfr("ExAmPlE.OrG.") // mixed case
+
+	_, err := tr.ServeDNS(ctx, w, m)
+	if err != nil {
+		t.Fatalf("ServeDNS error: %v", err)
+	}
+
+	validateAXFRResponse(t, w)
+}
+
+func TestLongestMatchMostSpecificZone(t *testing.T) {
+	x1 := &xfr{Zones: []string{"example.org."}}
+	x2 := &xfr{Zones: []string{"a.example.org."}}
+
+	got := longestMatch([]*xfr{x1, x2}, "host.a.example.org.")
+	if got != x2 {
+		t.Fatalf("expected most specific zone (a.example.org.) to match, got %+v", got)
+	}
+}
+
+func TestLongestMatchNilWhenNoMatch(t *testing.T) {
+	x1 := &xfr{Zones: []string{"example.org."}}
+
+	got := longestMatch([]*xfr{x1}, "other.net.")
+	if got != nil {
+		t.Fatalf("expected nil when no zones match, got %+v", got)
+	}
+}
