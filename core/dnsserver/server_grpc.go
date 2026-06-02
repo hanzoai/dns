@@ -106,7 +106,7 @@ func (s *ServergRPC) Serve(l net.Listener) error {
 	}
 
 	if s.Tracer() != nil {
-		onlyIfParent := func(parentSpanCtx opentracing.SpanContext, method string, req, resp any) bool {
+		onlyIfParent := func(parentSpanCtx opentracing.SpanContext, _method string, _req, _resp any) bool {
 			return parentSpanCtx != nil
 		}
 		serverOpts = append(serverOpts, grpc.UnaryInterceptor(otgrpc.OpenTracingServerInterceptor(s.Tracer(), otgrpc.IncludingSpans(onlyIfParent))))
@@ -129,7 +129,7 @@ func (s *ServergRPC) Serve(l net.Listener) error {
 }
 
 // ServePacket implements caddy.UDPServer interface.
-func (s *ServergRPC) ServePacket(p net.PacketConn) error { return nil }
+func (s *ServergRPC) ServePacket(_p net.PacketConn) error { return nil }
 
 // Listen implements caddy.TCPServer interface.
 func (s *ServergRPC) Listen() (net.Listener, error) {
@@ -198,8 +198,10 @@ func (s *ServergRPC) Query(ctx context.Context, in *pb.DnsPacket) (*pb.DnsPacket
 	if tsig := msg.IsTsig(); tsig != nil {
 		if s.tsigSecret == nil {
 			w.tsigStatus = dns.ErrSecret
-		} else if _, ok := s.tsigSecret[tsig.Hdr.Name]; !ok {
+		} else if secret, ok := s.tsigSecret[tsig.Hdr.Name]; !ok {
 			w.tsigStatus = dns.ErrSecret
+		} else {
+			w.tsigStatus = dns.TsigVerify(in.GetMsg(), secret, "", false)
 		}
 	}
 
@@ -242,7 +244,7 @@ func (r *gRPCresponse) Write(b []byte) (int, error) {
 
 func (r *gRPCresponse) Close() error              { return nil }
 func (r *gRPCresponse) TsigStatus() error         { return r.tsigStatus }
-func (r *gRPCresponse) TsigTimersOnly(b bool)     {}
+func (r *gRPCresponse) TsigTimersOnly(_b bool)    {}
 func (r *gRPCresponse) Hijack()                   {}
 func (r *gRPCresponse) LocalAddr() net.Addr       { return r.localAddr }
 func (r *gRPCresponse) RemoteAddr() net.Addr      { return r.remoteAddr }
