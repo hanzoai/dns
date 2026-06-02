@@ -18,6 +18,7 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/reuseport"
 	"github.com/coredns/coredns/plugin/pkg/transport"
 
+	"github.com/miekg/dns"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
@@ -25,6 +26,8 @@ import (
 const (
 	// DefaultHTTPS3MaxStreams is the default maximum number of concurrent QUIC streams per connection.
 	DefaultHTTPS3MaxStreams = 256
+	// DefaultHTTPS3MaxHeaderBytes limits HTTP/3 header memory before requests reach the DoH handler.
+	DefaultHTTPS3MaxHeaderBytes = 16 << 10 // 16 KiB
 )
 
 // ServerHTTPS3 represents a DNS-over-HTTP/3 server.
@@ -90,6 +93,7 @@ func NewServerHTTPS3(addr string, group []*Config) (*ServerHTTPS3, error) {
 		TLSConfig:       tlsConfig,
 		EnableDatagrams: true,
 		QUICConfig:      qconf,
+		MaxHeaderBytes:  DefaultHTTPS3MaxHeaderBytes,
 		// Logger: stdlog.New(&loggerAdapter{}, "", 0), TODO: Fix it
 	}
 
@@ -132,7 +136,7 @@ func (s *ServerHTTPS3) ServePacket(pc net.PacketConn) error {
 
 // Listen function not used in HTTP/3, but defined for compatibility
 func (s *ServerHTTPS3) Listen() (net.Listener, error) { return nil, nil }
-func (s *ServerHTTPS3) Serve(l net.Listener) error    { return nil }
+func (s *ServerHTTPS3) Serve(_l net.Listener) error   { return nil }
 
 // OnStartupComplete lists the sites served by this server
 // and any relevant information, assuming Quiet is false.
@@ -172,7 +176,7 @@ func (s *ServerHTTPS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msg, err := doh.RequestToMsg(r)
+	msg, raw, err := doh.RequestToMsgWire(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		s.countResponse(http.StatusBadRequest)
@@ -186,6 +190,16 @@ func (s *ServerHTTPS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		laddr:   s.listenAddr,
 		raddr:   &net.UDPAddr{IP: net.ParseIP(h), Port: port},
 		request: r,
+	}
+
+	if tsig := msg.IsTsig(); tsig != nil {
+		if s.tsigSecret == nil {
+			dw.tsigStatus = dns.ErrSecret
+		} else if secret, ok := s.tsigSecret[tsig.Hdr.Name]; !ok {
+			dw.tsigStatus = dns.ErrSecret
+		} else {
+			dw.tsigStatus = dns.TsigVerify(raw, secret, "", false)
+		}
 	}
 
 	ctx := context.WithValue(r.Context(), Key{}, s.Server)

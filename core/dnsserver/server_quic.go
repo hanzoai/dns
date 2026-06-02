@@ -221,14 +221,17 @@ func (s *ServerQUIC) serveQUICStream(stream *quic.Stream, conn *quic.Conn) {
 		localAddr:  conn.LocalAddr(),
 		remoteAddr: conn.RemoteAddr(),
 		stream:     stream,
+		conn:       conn,
 		Msg:        req,
 	}
 
 	if tsig := req.IsTsig(); tsig != nil {
 		if s.tsigSecret == nil {
 			w.tsigStatus = dns.ErrSecret
-		} else if _, ok := s.tsigSecret[tsig.Hdr.Name]; !ok {
+		} else if secret, ok := s.tsigSecret[tsig.Hdr.Name]; !ok {
 			w.tsigStatus = dns.ErrSecret
+		} else {
+			w.tsigStatus = dns.TsigVerify(buf, secret, "", false)
 		}
 	}
 
@@ -286,7 +289,7 @@ func (s *ServerQUIC) Stop() error {
 }
 
 // Serve implements caddy.TCPServer interface.
-func (s *ServerQUIC) Serve(l net.Listener) error { return nil }
+func (s *ServerQUIC) Serve(_l net.Listener) error { return nil }
 
 // Listen implements caddy.TCPServer interface.
 func (s *ServerQUIC) Listen() (net.Listener, error) { return nil, nil }
