@@ -152,13 +152,16 @@ records:
     proxied: true
 
   # Hanzo World — real-time global intelligence dashboard.
-  # Deployed via Vercel (luxfi/world project). Proxied OFF so the
-  # Let's Encrypt cert that Vercel auto-provisions on the apex is the
-  # one the browser sees (instead of CF's edge cert).
-  - type: CNAME
+  # Served by a Cloudflare Worker (name: `world`, route world.hanzo.ai/*).
+  # Proxied ON so traffic reaches the Workers runtime at the CF edge
+  # — without proxy the Worker route never matches.
+  # 192.0.2.1 is RFC 5737 TEST-NET-1; the placeholder origin IP is
+  # irrelevant because the Worker intercepts every request before any
+  # origin connection is attempted.
+  - type: A
     name: world
-    content: "cname.vercel-dns.com"
-    proxied: false
+    content: "192.0.2.1"
+    proxied: true
 
   - type: CNAME
     name: docs
