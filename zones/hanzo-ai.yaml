@@ -151,6 +151,15 @@ records:
     content: "insights-docs.pages.dev"
     proxied: true
 
+  # Hanzo World — real-time global intelligence dashboard.
+  # Deployed via Vercel (luxfi/world project). Proxied OFF so the
+  # Let's Encrypt cert that Vercel auto-provisions on the apex is the
+  # one the browser sees (instead of CF's edge cert).
+  - type: CNAME
+    name: world
+    content: "cname.vercel-dns.com"
+    proxied: false
+
   - type: CNAME
     name: docs
     content: "hanzo-docs.pages.dev"
