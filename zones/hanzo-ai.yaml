@@ -80,8 +80,8 @@ records:
 
   - type: A
     name: pay
-    content: "3.33.255.208"
-    proxied: false
+    content: "129.212.164.5"
+    proxied: true
 
   - type: A
     name: sign
