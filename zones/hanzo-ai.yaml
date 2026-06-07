@@ -55,8 +55,8 @@ records:
 
   - type: A
     name: dataroom
-    content: "134.199.138.27"
-    proxied: false
+    content: "129.212.164.5"
+    proxied: true
 
   - type: A
     name: explore
@@ -85,8 +85,13 @@ records:
 
   - type: A
     name: sign
-    content: "134.199.138.27"
-    proxied: false
+    content: "129.212.164.5"
+    proxied: true
+
+  - type: A
+    name: esign
+    content: "129.212.164.5"
+    proxied: true
 
   - type: A
     name: staging.platform
