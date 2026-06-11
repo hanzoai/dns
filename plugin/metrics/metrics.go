@@ -15,9 +15,7 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/plugin/pkg/reuseport"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	metric "github.com/luxfi/metric"
 	"github.com/prometheus/exporter-toolkit/web"
 )
 
@@ -25,7 +23,7 @@ import (
 type Metrics struct {
 	Next plugin.Handler
 	Addr string
-	Reg  *prometheus.Registry
+	Reg  *metric.Registry
 
 	ln      net.Listener
 	lnSetup bool
@@ -46,7 +44,7 @@ type Metrics struct {
 func New(addr string) *Metrics {
 	met := &Metrics{
 		Addr:    addr,
-		Reg:     prometheus.DefaultRegisterer.(*prometheus.Registry),
+		Reg:     metric.DefaultRegisterer.(*metric.Registry),
 		zoneMap: make(map[string]struct{}),
 		plugins: pluginList(caddy.ListPlugins()),
 	}
@@ -55,11 +53,11 @@ func New(addr string) *Metrics {
 }
 
 // MustRegister wraps m.Reg.MustRegister.
-func (m *Metrics) MustRegister(c prometheus.Collector) {
+func (m *Metrics) MustRegister(c metric.Collector) {
 	err := m.Reg.Register(c)
 	if err != nil {
 		// ignore any duplicate error, but fatal on any other kind of error
-		if _, ok := err.(prometheus.AlreadyRegisteredError); !ok {
+		if _, ok := err.(metric.AlreadyRegisteredError); !ok {
 			log.Fatalf("Cannot register metrics collector: %s", err)
 		}
 	}
@@ -129,7 +127,7 @@ func (m *Metrics) OnStartup() error {
 	m.lnSetup = true
 
 	m.mux = http.NewServeMux()
-	m.mux.Handle("/metrics", promhttp.HandlerFor(m.Reg, promhttp.HandlerOpts{}))
+	m.mux.Handle("/metrics", metric.NewHTTPHandler(m.Reg, metric.HandlerOpts{}))
 
 	// creating some helper variables to avoid data races on m.srv and m.ln
 	server := &http.Server{
@@ -248,7 +246,7 @@ var ListenAddr string
 // before erroring when it tries to close the metrics server
 const shutdownTimeout time.Duration = time.Second * 5
 
-var buildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+var buildInfo = metric.NewGaugeVec(metric.GaugeOpts{
 	Namespace: plugin.Namespace,
 	Name:      "build_info",
 	Help:      "A metric with a constant '1' value labeled by version, revision, and goversion from which CoreDNS was built.",

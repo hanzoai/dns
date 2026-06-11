@@ -3,20 +3,19 @@ package forward
 import (
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 // Variables declared for monitoring.
 var (
-	healthcheckBrokenCount = promauto.NewCounter(prometheus.CounterOpts{
+	healthcheckBrokenCount = metric.NewCounter(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "forward",
 		Name:      "healthcheck_broken_total",
 		Help:      "Counter of the number of complete failures of the healthchecks.",
 	})
 
-	maxConcurrentRejectCount = promauto.NewCounter(prometheus.CounterOpts{
+	maxConcurrentRejectCount = metric.NewCounter(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "forward",
 		Name:      "max_concurrent_rejects_total",

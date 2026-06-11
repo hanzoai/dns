@@ -4,23 +4,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 	dto "github.com/prometheus/client_model/go"
 	api "k8s.io/api/core/v1"
 )
 
 // histSampleCount reads the sample count for a specific service_kind label
 // from a HistogramVec.
-func histSampleCount(t *testing.T, vec *prometheus.HistogramVec, label string) uint64 {
+func histSampleCount(t *testing.T, vec *metric.HistogramVec, label string) uint64 {
 	t.Helper()
 	obs, err := vec.GetMetricWithLabelValues(label)
 	if err != nil {
 		t.Fatalf("GetMetricWithLabelValues(%q): %v", label, err)
 	}
-	m, ok := obs.(prometheus.Metric)
+	m, ok := obs.(metric.Metric)
 	if !ok {
-		t.Fatalf("observer for label %q does not implement prometheus.Metric", label)
+		t.Fatalf("observer for label %q does not implement metric.Metric", label)
 	}
 	pb := &dto.Metric{}
 	if err := m.Write(pb); err != nil {
@@ -81,11 +80,11 @@ func TestEndpointLatencyRecorder_record(t *testing.T) {
 			// Replace global metric with a fresh unregistered histogram for isolation.
 			// Do NOT add t.Parallel() here — these subtests swap global package state.
 			origMetric := DNSProgrammingLatency
-			reg := prometheus.NewRegistry()
-			DNSProgrammingLatency = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			reg := metric.NewRegistry()
+			DNSProgrammingLatency = metric.With(reg).NewHistogramVec(metric.HistogramOpts{
 				Name:    "test_dns_programming_duration_seconds",
 				Help:    "test histogram",
-				Buckets: prometheus.ExponentialBuckets(0.001, 2, 20),
+				Buckets: metric.ExponentialBuckets(0.001, 2, 20),
 			}, []string{"service_kind"})
 			t.Cleanup(func() { DNSProgrammingLatency = origMetric })
 

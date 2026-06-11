@@ -8,8 +8,7 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 // overloaded queries the health end point and updates a metrics showing how long it took.
@@ -66,7 +65,7 @@ func (h *health) overloaded(ctx context.Context) {
 
 var (
 	// HealthDuration is the metric used for exporting how fast we can retrieve the /health endpoint.
-	HealthDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+	HealthDuration = metric.NewHistogram(metric.HistogramOpts{
 		Namespace:                   plugin.Namespace,
 		Subsystem:                   "health",
 		Name:                        "request_duration_seconds",
@@ -75,7 +74,7 @@ var (
 		Help:                        "Histogram of the time (in seconds) each request took.",
 	})
 	// HealthFailures is the metric used to count how many times the health request failed
-	HealthFailures = promauto.NewCounter(prometheus.CounterOpts{
+	HealthFailures = metric.NewCounter(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "health",
 		Name:      "request_failures_total",
