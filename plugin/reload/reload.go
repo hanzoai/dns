@@ -12,7 +12,7 @@ import (
 	"github.com/coredns/caddy"
 	"github.com/coredns/caddy/caddyfile"
 
-	"github.com/prometheus/client_golang/prometheus"
+	metric "github.com/luxfi/metric"
 )
 
 const (
@@ -99,7 +99,7 @@ func hook(event caddy.EventName, info any) error {
 				}
 				s := sha512.Sum512(parsedCorefile)
 				if s != sha512sum {
-					reloadInfo.Delete(prometheus.Labels{"hash": "sha512", "value": hex.EncodeToString(sha512sum[:])})
+					reloadInfo.Delete(metric.Labels{"hash": "sha512", "value": hex.EncodeToString(sha512sum[:])})
 					// Let not try to restart with the same file, even though it is wrong.
 					sha512sum = s
 					// now lets consider that plugin will not be reload, unless appear in next config file

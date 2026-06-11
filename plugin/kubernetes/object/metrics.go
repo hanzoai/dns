@@ -6,8 +6,7 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/pkg/log"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 	api "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -24,12 +23,12 @@ var (
 	//   * cluster_ip
 	//   * headless_with_selector
 	//   * headless_without_selector
-	DNSProgrammingLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	DNSProgrammingLatency = metric.NewHistogramVec(metric.HistogramOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "kubernetes",
 		Name:      "dns_programming_duration_seconds",
 		// From 1 millisecond to ~17 minutes.
-		Buckets:                     prometheus.ExponentialBuckets(0.001, 2, 20),
+		Buckets:                     metric.ExponentialBuckets(0.001, 2, 20),
 		NativeHistogramBucketFactor: plugin.NativeHistogramBucketFactor,
 		Help:                        "Histogram of the time (in seconds) it took to program a dns instance.",
 	}, []string{"service_kind"})
