@@ -7,8 +7,8 @@ import (
 	"github.com/coredns/coredns/plugin/test"
 	"github.com/coredns/coredns/request"
 
+	metric "github.com/luxfi/metric"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func TestReportWithOptions(t *testing.T) {
