@@ -13,7 +13,6 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/uniq"
 
 	metric "github.com/luxfi/metric"
-	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 var (
@@ -112,9 +111,9 @@ func parse(c *caddy.Controller) (*Metrics, error) {
 					return nil, c.ArgErr()
 				}
 				runtimeMetricsOnce.Do(func() {
-					metric.Unregister(collectors.NewGoCollector())
-					metric.MustRegister(collectors.NewGoCollector(
-						collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
+					metric.Unregister(metric.NewGoCollector())
+					metric.MustRegister(metric.NewGoCollector(
+						metric.WithGoCollectorRuntimeMetrics(metric.MetricsAll),
 					))
 				})
 			case "tls":
