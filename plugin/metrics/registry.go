@@ -3,19 +3,19 @@ package metrics
 import (
 	"sync"
 
-	"github.com/prometheus/client_golang/prometheus"
+	metric "github.com/luxfi/metric"
 )
 
 type reg struct {
 	sync.RWMutex
-	r map[string]*prometheus.Registry
+	r map[string]*metric.Registry
 }
 
-func newReg() *reg { return &reg{r: make(map[string]*prometheus.Registry)} }
+func newReg() *reg { return &reg{r: make(map[string]*metric.Registry)} }
 
 // update sets the registry if not already there and returns the input. Or it returns
 // a previous set value.
-func (r *reg) getOrSet(addr string, pr *prometheus.Registry) *prometheus.Registry {
+func (r *reg) getOrSet(addr string, pr *metric.Registry) *metric.Registry {
 	r.Lock()
 	defer r.Unlock()
 

@@ -12,7 +12,7 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
+	metric "github.com/luxfi/metric"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -153,7 +153,7 @@ func (l *metric) Visit(n ast.Node) ast.Visitor {
 		return l
 	}
 
-	metricName := prometheus.BuildFQName(plugin.Namespace, subsystem, name)
+	metricName := metric.BuildFQName(plugin.Namespace, subsystem, name)
 	l.Metric = &dto.MetricFamily{
 		Name: &metricName,
 		Help: &help,

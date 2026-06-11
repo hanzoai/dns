@@ -3,13 +3,12 @@ package local
 import (
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 var (
 	// LocalhostCount report the number of times we've seen a localhost.<domain> query.
-	LocalhostCount = promauto.NewCounter(prometheus.CounterOpts{
+	LocalhostCount = metric.NewCounter(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "local",
 		Name:      "localhost_requests_total",
