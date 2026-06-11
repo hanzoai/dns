@@ -3,20 +3,19 @@ package vars
 import (
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 // Request* and Response* are the prometheus counters and gauges we are using for exporting metrics.
 var (
-	RequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	RequestCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: subsystem,
 		Name:      "requests_total",
 		Help:      "Counter of DNS requests made per zone, protocol and family.",
 	}, []string{"server", "zone", "view", "proto", "family", "type"})
 
-	RequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	RequestDuration = metric.NewHistogramVec(metric.HistogramOpts{
 		Namespace:                   plugin.Namespace,
 		Subsystem:                   subsystem,
 		Name:                        "request_duration_seconds",
@@ -25,7 +24,7 @@ var (
 		Help:                        "Histogram of the time (in seconds) each request took per zone.",
 	}, []string{"server", "zone", "view"})
 
-	RequestSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	RequestSize = metric.NewHistogramVec(metric.HistogramOpts{
 		Namespace:                   plugin.Namespace,
 		Subsystem:                   subsystem,
 		Name:                        "request_size_bytes",
@@ -34,14 +33,14 @@ var (
 		NativeHistogramBucketFactor: plugin.NativeHistogramBucketFactor,
 	}, []string{"server", "zone", "view", "proto"})
 
-	RequestDo = promauto.NewCounterVec(prometheus.CounterOpts{
+	RequestDo = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: subsystem,
 		Name:      "do_requests_total",
 		Help:      "Counter of DNS requests with DO bit set per zone.",
 	}, []string{"server", "zone", "view"})
 
-	ResponseSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	ResponseSize = metric.NewHistogramVec(metric.HistogramOpts{
 		Namespace:                   plugin.Namespace,
 		Subsystem:                   subsystem,
 		Name:                        "response_size_bytes",
@@ -50,40 +49,40 @@ var (
 		NativeHistogramBucketFactor: plugin.NativeHistogramBucketFactor,
 	}, []string{"server", "zone", "view", "proto"})
 
-	ResponseRcode = promauto.NewCounterVec(prometheus.CounterOpts{
+	ResponseRcode = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: subsystem,
 		Name:      "responses_total",
 		Help:      "Counter of response status codes.",
 	}, []string{"server", "zone", "view", "rcode", "plugin"})
 
-	Panic = promauto.NewCounter(prometheus.CounterOpts{
+	Panic = metric.NewCounter(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Name:      "panics_total",
 		Help:      "A metrics that counts the number of panics.",
 	})
 
-	PluginEnabled = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	PluginEnabled = metric.NewGaugeVec(metric.GaugeOpts{
 		Namespace: plugin.Namespace,
 		Name:      "plugin_enabled",
 		Help:      "A metric that indicates whether a plugin is enabled on per server and zone basis.",
 	}, []string{"server", "zone", "view", "name"})
 
-	HTTPSResponsesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	HTTPSResponsesCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: subsystem,
 		Name:      "https_responses_total",
 		Help:      "Counter of DoH responses per server and http status code.",
 	}, []string{"server", "status"})
 
-	HTTPS3ResponsesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	HTTPS3ResponsesCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: subsystem,
 		Name:      "https3_responses_total",
 		Help:      "Counter of DoH3 responses per server and http status code.",
 	}, []string{"server", "status"})
 
-	QUICResponsesCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	QUICResponsesCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: subsystem,
 		Name:      "quic_responses_total",

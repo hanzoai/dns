@@ -21,9 +21,8 @@ import (
 	"github.com/coredns/coredns/plugin/pkg/dnstest"
 	"github.com/coredns/coredns/plugin/test"
 
+	metric "github.com/luxfi/metric"
 	"github.com/miekg/dns"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 const (
@@ -525,9 +524,9 @@ func TestMetricsHTTPTimeout(t *testing.T) {
 
 func TestMustRegister_DuplicateOK(_t *testing.T) {
 	met := New("localhost:0")
-	met.Reg = prometheus.NewRegistry()
+	met.Reg = metric.NewRegistry()
 
-	g := promauto.NewGaugeVec(prometheus.GaugeOpts{Namespace: "test", Name: "dup"}, []string{"l"})
+	g := metric.NewGaugeVec(metric.GaugeOpts{Namespace: "test", Name: "dup"}, []string{"l"})
 	met.MustRegister(g)
 	// registering the same collector again should yield AlreadyRegisteredError internally and be ignored
 	met.MustRegister(g)
@@ -577,13 +576,13 @@ func TestOnRestartStopsServer(t *testing.T) {
 func TestRegistryGetOrSet(t *testing.T) {
 	r := newReg()
 	addr := "localhost:12345"
-	pr1 := prometheus.NewRegistry()
+	pr1 := metric.NewRegistry()
 	got1 := r.getOrSet(addr, pr1)
 	if got1 != pr1 {
 		t.Fatalf("first getOrSet should return provided registry")
 	}
 
-	pr2 := prometheus.NewRegistry()
+	pr2 := metric.NewRegistry()
 	got2 := r.getOrSet(addr, pr2)
 	if got2 != pr1 {
 		t.Fatalf("second getOrSet should return original registry, got different one")

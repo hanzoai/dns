@@ -12,7 +12,7 @@ import (
 	"github.com/coredns/coredns/plugin/metrics/vars"
 	"github.com/coredns/coredns/plugin/pkg/uniq"
 
-	"github.com/prometheus/client_golang/prometheus"
+	metric "github.com/luxfi/metric"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
@@ -112,8 +112,8 @@ func parse(c *caddy.Controller) (*Metrics, error) {
 					return nil, c.ArgErr()
 				}
 				runtimeMetricsOnce.Do(func() {
-					prometheus.Unregister(collectors.NewGoCollector())
-					prometheus.MustRegister(collectors.NewGoCollector(
+					metric.Unregister(collectors.NewGoCollector())
+					metric.MustRegister(collectors.NewGoCollector(
 						collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
 					))
 				})

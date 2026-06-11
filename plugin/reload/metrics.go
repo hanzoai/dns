@@ -3,21 +3,20 @@ package reload
 import (
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 // Metrics for the reload plugin
 var (
 	// failedCount is the counter of the number of failed reload attempts.
-	failedCount = promauto.NewCounter(prometheus.CounterOpts{
+	failedCount = metric.NewCounter(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "reload",
 		Name:      "failed_total",
 		Help:      "Counter of the number of failed reload attempts.",
 	})
 	// reloadInfo is record the hash value during reload.
-	reloadInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	reloadInfo = metric.NewGaugeVec(metric.GaugeOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "reload",
 		Name:      "version_info",

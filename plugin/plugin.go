@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net"
 
+	metric "github.com/luxfi/metric"
 	"github.com/miekg/dns"
 	ot "github.com/opentracing/opentracing-go"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 type (
@@ -153,11 +153,11 @@ func ClientWrite(rcode int) bool {
 // Namespace is the namespace used for the metrics.
 const Namespace = "coredns"
 
-// TimeBuckets is based on Prometheus client_golang prometheus.DefBuckets
-var TimeBuckets = prometheus.ExponentialBuckets(0.00025, 2, 16) // from 0.25ms to 8 seconds
+// TimeBuckets is based on Prometheus client_golang metric.DefBuckets
+var TimeBuckets = metric.ExponentialBuckets(0.00025, 2, 16) // from 0.25ms to 8 seconds
 
 // SlimTimeBuckets is low cardinality set of duration buckets.
-var SlimTimeBuckets = prometheus.ExponentialBuckets(0.00025, 10, 5) // from 0.25ms to 2.5 seconds
+var SlimTimeBuckets = metric.ExponentialBuckets(0.00025, 10, 5) // from 0.25ms to 2.5 seconds
 
 // NativeHistogramBucketFactor controls the resolution of Prometheus native histogram buckets.
 // See: https://pkg.go.dev/github.com/prometheus/client_golang@v1.19.0/prometheus#section-readme
