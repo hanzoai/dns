@@ -9,41 +9,40 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 	"k8s.io/client-go/tools/metrics"
 )
 
 var (
 	// requestLatency measures K8s rest client requests latency grouped by verb and host.
-	requestLatency = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
+	requestLatency = metric.NewHistogramVec(
+		metric.HistogramOpts{
 			Namespace:                   plugin.Namespace,
 			Subsystem:                   "kubernetes",
 			Name:                        "rest_client_request_duration_seconds",
 			Help:                        "Request latency in seconds. Broken down by verb and host.",
-			Buckets:                     prometheus.DefBuckets,
+			Buckets:                     metric.DefBuckets,
 			NativeHistogramBucketFactor: plugin.NativeHistogramBucketFactor,
 		},
 		[]string{"verb", "host"},
 	)
 
 	// rateLimiterLatency measures K8s rest client rate limiter latency grouped by verb and host.
-	rateLimiterLatency = promauto.NewHistogramVec(
-		prometheus.HistogramOpts{
+	rateLimiterLatency = metric.NewHistogramVec(
+		metric.HistogramOpts{
 			Namespace:                   plugin.Namespace,
 			Subsystem:                   "kubernetes",
 			Name:                        "rest_client_rate_limiter_duration_seconds",
 			Help:                        "Client side rate limiter latency in seconds. Broken down by verb and host.",
-			Buckets:                     prometheus.DefBuckets,
+			Buckets:                     metric.DefBuckets,
 			NativeHistogramBucketFactor: plugin.NativeHistogramBucketFactor,
 		},
 		[]string{"verb", "host"},
 	)
 
 	// requestResult measures K8s rest client request metrics grouped by status code, method & host.
-	requestResult = promauto.NewCounterVec(
-		prometheus.CounterOpts{
+	requestResult = metric.NewCounterVec(
+		metric.CounterOpts{
 			Namespace: plugin.Namespace,
 			Subsystem: "kubernetes",
 			Name:      "rest_client_requests_total",
@@ -62,7 +61,7 @@ func init() {
 }
 
 type latencyAdapter struct {
-	m *prometheus.HistogramVec
+	m *metric.HistogramVec
 }
 
 func (l *latencyAdapter) Observe(_ context.Context, verb string, u url.URL, latency time.Duration) {
@@ -70,7 +69,7 @@ func (l *latencyAdapter) Observe(_ context.Context, verb string, u url.URL, late
 }
 
 type resultAdapter struct {
-	m *prometheus.CounterVec
+	m *metric.CounterVec
 }
 
 func (r *resultAdapter) Increment(_ context.Context, code, method, host string) {

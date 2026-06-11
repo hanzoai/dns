@@ -3,25 +3,24 @@ package grpc
 import (
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 // Variables declared for monitoring.
 var (
-	RequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	RequestCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "grpc",
 		Name:      "requests_total",
 		Help:      "Counter of requests made per upstream.",
 	}, []string{"to"})
-	RcodeCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	RcodeCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "grpc",
 		Name:      "responses_total",
 		Help:      "Counter of requests made per upstream.",
 	}, []string{"rcode", "to"})
-	RequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	RequestDuration = metric.NewHistogramVec(metric.HistogramOpts{
 		Namespace:                   plugin.Namespace,
 		Subsystem:                   "grpc",
 		Name:                        "request_duration_seconds",

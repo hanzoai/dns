@@ -3,13 +3,12 @@ package autopath
 import (
 	"github.com/coredns/coredns/plugin"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	metric "github.com/luxfi/metric"
 )
 
 var (
 	// autoPathCount is counter of successfully autopath-ed queries.
-	autoPathCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	autoPathCount = metric.NewCounterVec(metric.CounterOpts{
 		Namespace: plugin.Namespace,
 		Subsystem: "autopath",
 		Name:      "success_total",
