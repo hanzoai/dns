@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	dnsv1alpha1 "github.com/hanzoai/dns-operator/api/v1alpha1"
+	"github.com/hanzoai/dns-operator/internal/cloudflare"
 	"github.com/hanzoai/dns-operator/internal/controller"
 )
 
@@ -65,13 +66,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Cloudflare sync controller.
+	// One Cloudflare client, shared by the edge-facing reconcilers.
+	// nil when no token is set — reconcilers degrade to no-op, not a crash.
+	var cf *cloudflare.Client
+	if token := os.Getenv("CF_API_TOKEN"); token != "" {
+		cf = cloudflare.New(token)
+	}
+
+	// Cloudflare DNS sync controller.
 	if err := (&controller.CloudflareReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		CFAPIToken: os.Getenv("CF_API_TOKEN"),
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		CF:     cf,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Cloudflare")
+		os.Exit(1)
+	}
+
+	// Cloudflare Pages controller.
+	if err := (&controller.PagesProjectReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		CF:     cf,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "PagesProject")
 		os.Exit(1)
 	}
 
