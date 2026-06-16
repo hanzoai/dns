@@ -1,0 +1,36 @@
+# Deploy hanzo.bot as a Cloudflare Pages site with its domain wired end-to-end.
+# The operator (1) ensures the CF Pages project, (2) attaches the custom domain,
+# (3) emits a CNAME DnsRecord (hanzo.bot -> <project>.pages.dev) which the
+# Cloudflare DNS reconciler syncs to the edge. One declarative object per site.
+apiVersion: dns.hanzo.ai/v1alpha1
+kind: DnsZone
+metadata:
+  name: hanzo-bot
+  namespace: dns-system
+spec:
+  zone: hanzo.bot
+  cloudflareZoneId: "REPLACE_WITH_HANZO_BOT_ZONE_ID"
+---
+apiVersion: dns.hanzo.ai/v1alpha1
+kind: PagesProject
+metadata:
+  name: hanzo-bot
+  namespace: dns-system
+spec:
+  accountId: "REPLACE_WITH_CF_ACCOUNT_ID"
+  customDomain: hanzo.bot
+  zoneRef: hanzo-bot
+---
+# Manage any DNS record declaratively (synced to Cloudflare when syncToCloudflare=true).
+apiVersion: dns.hanzo.ai/v1alpha1
+kind: DnsRecord
+metadata:
+  name: api-hanzo-bot
+  namespace: dns-system
+spec:
+  zoneRef: hanzo-bot
+  name: api
+  type: A
+  content: 129.212.164.5
+  proxied: true
+  syncToCloudflare: true
