@@ -1,4 +1,4 @@
-# LLM.md - Hanzo Dns
+# Hanzo Dns
 
 ## Overview
 Go module: github.com/coredns/coredns
