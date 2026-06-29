@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/hero.svg" alt="dns" width="880"></p>
+
 # Hanzo DNS
 
 **Hanzo DNS** is Hanzo's DNS server/forwarder, built on [CoreDNS](https://coredns.io) (a Cloud Native Computing Foundation graduated project, Apache-2.0). Hanzo DNS retains CoreDNS's upstream license and attribution; the Go module path remains `github.com/coredns/coredns`. The upstream documentation follows.
