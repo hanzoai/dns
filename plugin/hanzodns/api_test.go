@@ -19,7 +19,7 @@ func newTestServer() (*http.ServeMux, *Store) {
 func TestHealthEndpoint(t *testing.T) {
 	mux, _ := newTestServer()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dns/health", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -41,7 +41,7 @@ func TestAuthRequired(t *testing.T) {
 	mux, _ := newTestServer()
 
 	// No auth header.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/zones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -49,7 +49,7 @@ func TestAuthRequired(t *testing.T) {
 	}
 
 	// Wrong token.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/zones", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
 	req.Header.Set("Authorization", "Bearer wrong-key")
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -58,7 +58,7 @@ func TestAuthRequired(t *testing.T) {
 	}
 
 	// Correct token.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/zones", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
 	req.Header.Set("Authorization", "Bearer test-secret-key")
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -72,7 +72,7 @@ func TestNoAuthWhenKeyUnset(t *testing.T) {
 
 	mux, _ := newTestServer()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/zones", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -86,7 +86,7 @@ func TestZoneCRUD(t *testing.T) {
 
 	// Create zone.
 	body := `{"zone":"example.com"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/zones", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns/zones", bytes.NewBufferString(body))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -100,7 +100,7 @@ func TestZoneCRUD(t *testing.T) {
 	}
 
 	// List zones.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/zones", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -117,7 +117,7 @@ func TestZoneCRUD(t *testing.T) {
 	}
 
 	// Get zone.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/zones/example.com", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/zones/example.com", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -125,7 +125,7 @@ func TestZoneCRUD(t *testing.T) {
 	}
 
 	// Duplicate zone.
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/zones", bytes.NewBufferString(body))
+	req = httptest.NewRequest(http.MethodPost, "/v1/dns/zones", bytes.NewBufferString(body))
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusConflict {
@@ -133,7 +133,7 @@ func TestZoneCRUD(t *testing.T) {
 	}
 
 	// Delete zone.
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/zones/example.com", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/v1/dns/zones/example.com", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -141,7 +141,7 @@ func TestZoneCRUD(t *testing.T) {
 	}
 
 	// Delete again -- 404.
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/zones/example.com", nil)
+	req = httptest.NewRequest(http.MethodDelete, "/v1/dns/zones/example.com", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -154,7 +154,7 @@ func TestRecordCRUD(t *testing.T) {
 	mux, _ := newTestServer()
 
 	// Create zone first.
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/zones", bytes.NewBufferString(`{"zone":"example.com"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns/zones", bytes.NewBufferString(`{"zone":"example.com"}`))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -163,7 +163,7 @@ func TestRecordCRUD(t *testing.T) {
 
 	// Create record.
 	recBody := `{"name":"www","type":"A","content":"1.2.3.4","ttl":300}`
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/zones/example.com/records", bytes.NewBufferString(recBody))
+	req = httptest.NewRequest(http.MethodPost, "/v1/dns/zones/example.com/records", bytes.NewBufferString(recBody))
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusCreated {
@@ -177,7 +177,7 @@ func TestRecordCRUD(t *testing.T) {
 	}
 
 	// List records.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/zones/example.com/records", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/zones/example.com/records", nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -185,7 +185,7 @@ func TestRecordCRUD(t *testing.T) {
 	}
 
 	// Get record.
-	req = httptest.NewRequest(http.MethodGet, "/api/v1/zones/example.com/records/"+rec.ID, nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/zones/example.com/records/"+rec.ID, nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -194,7 +194,7 @@ func TestRecordCRUD(t *testing.T) {
 
 	// Update record (PATCH).
 	patchBody := `{"content":"5.6.7.8"}`
-	req = httptest.NewRequest(http.MethodPatch, "/api/v1/zones/example.com/records/"+rec.ID, bytes.NewBufferString(patchBody))
+	req = httptest.NewRequest(http.MethodPatch, "/v1/dns/zones/example.com/records/"+rec.ID, bytes.NewBufferString(patchBody))
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -208,7 +208,7 @@ func TestRecordCRUD(t *testing.T) {
 	}
 
 	// Delete record.
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/zones/example.com/records/"+rec.ID, nil)
+	req = httptest.NewRequest(http.MethodDelete, "/v1/dns/zones/example.com/records/"+rec.ID, nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -216,7 +216,7 @@ func TestRecordCRUD(t *testing.T) {
 	}
 
 	// Delete again -- 404.
-	req = httptest.NewRequest(http.MethodDelete, "/api/v1/zones/example.com/records/"+rec.ID, nil)
+	req = httptest.NewRequest(http.MethodDelete, "/v1/dns/zones/example.com/records/"+rec.ID, nil)
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -228,7 +228,7 @@ func TestRecordValidation(t *testing.T) {
 	os.Unsetenv("HANZO_DNS_API_KEY")
 	mux, _ := newTestServer()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/zones", bytes.NewBufferString(`{"zone":"example.com"}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns/zones", bytes.NewBufferString(`{"zone":"example.com"}`))
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -245,7 +245,7 @@ func TestRecordValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/zones/example.com/records", bytes.NewBufferString(tt.body))
+			req := httptest.NewRequest(http.MethodPost, "/v1/dns/zones/example.com/records", bytes.NewBufferString(tt.body))
 			w := httptest.NewRecorder()
 			mux.ServeHTTP(w, req)
 			if w.Code != tt.code {
@@ -260,7 +260,7 @@ func TestRecordInNonexistentZone(t *testing.T) {
 	mux, _ := newTestServer()
 
 	// List records for nonexistent zone.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/zones/nope.com/records", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dns/zones/nope.com/records", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
@@ -268,7 +268,7 @@ func TestRecordInNonexistentZone(t *testing.T) {
 	}
 
 	// Create record in nonexistent zone.
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/zones/nope.com/records", bytes.NewBufferString(`{"name":"www","type":"A","content":"1.2.3.4"}`))
+	req = httptest.NewRequest(http.MethodPost, "/v1/dns/zones/nope.com/records", bytes.NewBufferString(`{"name":"www","type":"A","content":"1.2.3.4"}`))
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {

@@ -91,7 +91,7 @@ func TestSyncEndpoint(t *testing.T) {
 	store := NewStore()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/sync", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/v1/dns/sync", func(w http.ResponseWriter, r *http.Request) {
 		handleSync(w, r, store)
 	})
 
@@ -114,7 +114,7 @@ func TestSyncEndpoint(t *testing.T) {
 	}
 
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns/sync", bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -137,7 +137,7 @@ func TestSyncEndpointEmptyZones(t *testing.T) {
 
 	body := SyncRequest{Zones: []SyncZoneRequest{}}
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync", bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns/sync", bytes.NewReader(b))
 	w := httptest.NewRecorder()
 
 	handleSync(w, req, store)
@@ -148,7 +148,7 @@ func TestSyncEndpointEmptyZones(t *testing.T) {
 func TestSyncEndpointMethodNotAllowed(t *testing.T) {
 	store := NewStore()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync", nil)
+	req := httptest.NewRequest(http.MethodGet, "/v1/dns/sync", nil)
 	w := httptest.NewRecorder()
 
 	handleSync(w, req, store)
