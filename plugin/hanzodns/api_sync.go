@@ -5,12 +5,12 @@ import (
 	"net/http"
 )
 
-// SyncRequest is the top-level request body for POST /api/v1/sync.
+// SyncRequest is the top-level request body for POST /v1/dns/sync.
 type SyncRequest struct {
 	Zones []SyncZoneRequest `json:"zones"`
 }
 
-// handleSync handles POST /api/v1/sync — bulk pushes zones + records.
+// handleSync handles POST /v1/dns/sync — bulk pushes zones + records.
 func handleSync(w http.ResponseWriter, r *http.Request, store *Store) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is allowed")
