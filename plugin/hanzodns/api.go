@@ -52,23 +52,23 @@ func authMiddleware(next http.Handler) http.Handler {
 // registerRoutes wires up all REST API handlers on the given mux.
 func registerRoutes(mux *http.ServeMux, store *Store) {
 	// Health -- no auth required.
-	mux.HandleFunc("GET /api/v1/health", handleHealth)
+	mux.HandleFunc("GET /v1/dns/health", handleHealth)
 
 	// All other routes require auth.
 	authed := authMiddleware(apiRouter(store))
-	mux.Handle("/api/v1/zones", authed)
-	mux.Handle("/api/v1/zones/", authed)
+	mux.Handle("/v1/dns/zones", authed)
+	mux.Handle("/v1/dns/zones/", authed)
 
 	// Bulk sync endpoint -- requires auth.
-	mux.Handle("/api/v1/sync", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/v1/dns/sync", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handleSync(w, r, store)
 	})))
 }
 
-// apiRouter returns a handler that dispatches /api/v1/zones* requests.
+// apiRouter returns a handler that dispatches /v1/dns/zones* requests.
 func apiRouter(store *Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/api/v1")
+		path := strings.TrimPrefix(r.URL.Path, "/v1/dns")
 		path = strings.TrimSuffix(path, "/")
 		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 
