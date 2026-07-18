@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/coredns/caddy"
@@ -24,6 +25,13 @@ func setup(c *caddy.Controller) error {
 	}
 
 	store := NewStore()
+
+	// Durable backing for authoritative zones: when HANZO_DNS_STATE_DIR is set,
+	// the store loads its last snapshot and persists after every mutation, so a
+	// pod restart preserves native zones. Unset keeps the pure in-memory store.
+	if err := EnableSnapshot(store, os.Getenv("HANZO_DNS_STATE_DIR")); err != nil {
+		return plugin.Error("hanzodns", err)
+	}
 
 	h := &HanzoDNS{
 		Store: store,
