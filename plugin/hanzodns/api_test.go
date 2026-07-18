@@ -9,7 +9,12 @@ import (
 	"testing"
 )
 
+// newTestServer builds the API in explicit dev-insecure mode so handler tests
+// exercise routing/validation without wiring OIDC or a key. Production is
+// fail-closed (see TestAuthChainFailsClosedByDefault); a caller that sets
+// HANZO_DNS_API_KEY or HANZO_DNS_OIDC_ISSUER before this call overrides it.
 func newTestServer() (*http.ServeMux, *Store) {
+	os.Setenv("HANZO_DNS_DEV_INSECURE", "1")
 	store := NewStore()
 	mux := http.NewServeMux()
 	registerRoutes(mux, store)
@@ -67,16 +72,45 @@ func TestAuthRequired(t *testing.T) {
 	}
 }
 
-func TestNoAuthWhenKeyUnset(t *testing.T) {
+func TestDevInsecureAllows(t *testing.T) {
 	os.Unsetenv("HANZO_DNS_API_KEY")
+	os.Unsetenv("HANZO_DNS_OIDC_ISSUER")
 
-	mux, _ := newTestServer()
+	mux, _ := newTestServer() // sets HANZO_DNS_DEV_INSECURE=1
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 when no key configured, got %d", w.Code)
+		t.Fatalf("expected 200 in explicit dev-insecure mode, got %d", w.Code)
+	}
+}
+
+// TestAuthChainFailsClosedByDefault asserts that with NO auth configured (no
+// OIDC issuer, no API key, no dev opt-in) the API denies every request — the old
+// anonymous allow-all is not reachable in a misconfigured prod pod.
+func TestAuthChainFailsClosedByDefault(t *testing.T) {
+	os.Unsetenv("HANZO_DNS_API_KEY")
+	os.Unsetenv("HANZO_DNS_OIDC_ISSUER")
+	os.Unsetenv("HANZO_DNS_DEV_INSECURE")
+
+	store := NewStore()
+	mux := http.NewServeMux()
+	registerRoutes(mux, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/dns/zones", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 fail-closed with no auth configured, got %d", w.Code)
+	}
+
+	// Health stays public even fail-closed (liveness must be probe-able).
+	req = httptest.NewRequest(http.MethodGet, "/v1/dns/health", nil)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected health 200 even fail-closed, got %d", w.Code)
 	}
 }
 

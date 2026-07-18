@@ -61,7 +61,9 @@ type Provider interface {
 	ZoneIDForName(ctx context.Context, name string) (string, error)
 	ListRecords(ctx context.Context, zoneID string) ([]ProviderRecord, error)
 	CreateRecord(ctx context.Context, zoneID string, in RecordInput) (ProviderRecord, error)
-	UpdateRecord(ctx context.Context, zoneID, recordID string, in RecordInput) (ProviderRecord, error)
+	// UpdateRecord applies a PARTIAL update: only the patch's set fields change,
+	// so an out-of-band change to the record's other fields upstream is preserved.
+	UpdateRecord(ctx context.Context, zoneID, recordID string, patch RecordPatch) (ProviderRecord, error)
 	DeleteRecord(ctx context.Context, zoneID, recordID string) error
 }
 

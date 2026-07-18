@@ -1,15 +1,17 @@
 package hanzodns
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// SyncZoneRequest represents a bulk zone sync payload.
+// SyncZoneRequest represents a bulk zone sync payload. The owning org is NOT
+// taken from the body — it is the caller's validated `owner` claim, applied by
+// handleSync — so a sync can never target or overwrite another org's zone.
 type SyncZoneRequest struct {
 	Zone    string       `json:"zone"`
-	OrgID   string       `json:"org_id,omitempty"`
 	Records []SyncRecord `json:"records"`
 }
 
@@ -32,9 +34,11 @@ type SyncResponse struct {
 	Deleted     int    `json:"deleted"`
 }
 
-// BulkSync atomically replaces all records for a zone. If the zone does not
-// exist it is created first. Returns counts of records created and deleted.
-func (s *Store) BulkSync(req SyncZoneRequest) (*SyncResponse, error) {
+// BulkSync atomically replaces all records for org's zone. If the zone does not
+// exist it is created for org; if it exists but is owned by a DIFFERENT org the
+// sync is refused (a caller can never overwrite another tenant's zone). Returns
+// counts of records created and deleted.
+func (s *Store) BulkSync(org string, req SyncZoneRequest) (*SyncResponse, error) {
 	key := normZone(req.Zone)
 
 	s.mu.Lock()
@@ -44,11 +48,16 @@ func (s *Store) BulkSync(req SyncZoneRequest) (*SyncResponse, error) {
 	now := time.Now().UTC()
 
 	zd, exists := s.zones[key]
-	if !exists {
+	if exists {
+		if zd.zone.Org != org {
+			return nil, fmt.Errorf("zone %q already exists", key)
+		}
+	} else {
 		zd = &zoneData{
 			zone: Zone{
 				ID:          uuid.New().String(),
 				Name:        key,
+				Org:         org,
 				Status:      "active",
 				Nameservers: []string{"ns1.hanzo.ai.", "ns2.hanzo.ai."},
 				CreatedAt:   now,

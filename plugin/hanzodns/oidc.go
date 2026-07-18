@@ -84,11 +84,11 @@ func oidcMiddleware(next http.Handler) http.Handler {
 }
 
 type jwtClaims struct {
-	Issuer   string `json:"iss"`
-	Subject  string `json:"sub"`
-	Audience string `json:"aud"`
-	Expiry   int64  `json:"exp"`
-	IssuedAt int64  `json:"iat"`
+	Issuer   string        `json:"iss"`
+	Subject  string        `json:"sub"`
+	Audience audienceClaim `json:"aud"`
+	Expiry   int64         `json:"exp"`
+	IssuedAt int64         `json:"iat"`
 	// Owner is the canonical Hanzo IAM org claim (the org slug). It is the same
 	// value cloud/gateway derive tenancy from, so using it here keeps the KMS
 	// org path in lockstep with KMS's org-scope guard.
@@ -289,17 +289,65 @@ func validateToken(tokenStr string, keys []jwk, issuer, audience string) (*jwtCl
 		return nil, err
 	}
 
-	if c.Expiry > 0 && time.Now().Unix() > c.Expiry {
+	// A token with no expiry is rejected: an unbounded token that leaks never
+	// stops being valid.
+	if c.Expiry == 0 {
+		return nil, fmt.Errorf("token has no expiry")
+	}
+	if time.Now().Unix() >= c.Expiry {
 		return nil, fmt.Errorf("token expired")
 	}
 	if c.Issuer != issuer {
 		return nil, fmt.Errorf("invalid issuer: got %q, want %q", c.Issuer, issuer)
 	}
-	if audience != "" && c.Audience != audience {
+	// When an audience allowlist is configured, the token must carry at least one
+	// of the allowed audiences — so a token minted for another service is refused.
+	if allow := splitAudience(audience); len(allow) > 0 && !c.Audience.matchesAny(allow) {
 		return nil, fmt.Errorf("invalid audience")
 	}
 
 	return &c, nil
+}
+
+// audienceClaim is a JWT `aud`, which per RFC 7519 may be a single string or an
+// array of strings.
+type audienceClaim []string
+
+func (a *audienceClaim) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*a = audienceClaim{s}
+		return nil
+	}
+	var arr []string
+	if err := json.Unmarshal(b, &arr); err != nil {
+		return err
+	}
+	*a = arr
+	return nil
+}
+
+// matchesAny reports whether the token carries any of the allowed audiences.
+func (a audienceClaim) matchesAny(allow []string) bool {
+	for _, want := range allow {
+		for _, got := range a {
+			if got == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// splitAudience parses a comma-separated audience allowlist, trimming blanks.
+func splitAudience(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func base64URLDecode(s string) ([]byte, error) {
