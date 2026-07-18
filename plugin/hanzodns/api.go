@@ -29,13 +29,15 @@ func writeError(w http.ResponseWriter, status int, code, msg string) {
 	writeJSON(w, status, apiError{Code: code, Message: msg})
 }
 
-// authMiddleware validates the Bearer token against HANZO_DNS_API_KEY.
+// authMiddleware validates the Bearer token against HANZO_DNS_API_KEY. It fails
+// closed: authChain only selects it when a key is configured, and with an empty
+// key it denies every request (there is no anonymous fallthrough here — the only
+// unauthenticated path is authChain's explicit HANZO_DNS_DEV_INSECURE opt-in).
 func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := os.Getenv("HANZO_DNS_API_KEY")
 		if key == "" {
-			// No key configured -- allow all requests (development mode).
-			next.ServeHTTP(w, r)
+			writeError(w, http.StatusServiceUnavailable, "unconfigured", "authentication is not configured")
 			return
 		}
 
@@ -71,17 +73,26 @@ func registerRoutes(mux *http.ServeMux, store *Store) {
 	})))
 }
 
-// authChain selects the API's ONE auth boundary by configuration: when an OIDC
-// issuer is set it validates the caller's IAM JWT (and makes org + bearer
-// available for the KMS-backed provider path); otherwise it falls back to the
-// static shared-key check. This keeps provider dispatch (which needs the org
-// and the caller's bearer) available in production while preserving the simple
-// key mode for standalone deployments.
+// authChain selects the API's ONE auth boundary by configuration and FAILS
+// CLOSED: multi-tenant production sets HANZO_DNS_OIDC_ISSUER so every request is
+// an IAM-validated JWT (exposing the org + bearer the provider path needs); a
+// standalone single-tenant deployment may instead set HANZO_DNS_API_KEY for the
+// static shared-key check. When NEITHER is configured the API is denied — the
+// old "allow all" is reachable ONLY behind an explicit HANZO_DNS_DEV_INSECURE=1
+// opt-in, never by default, so a misconfigured prod pod never serves anonymously.
 func authChain(next http.Handler) http.Handler {
-	if os.Getenv("HANZO_DNS_OIDC_ISSUER") != "" {
+	switch {
+	case os.Getenv("HANZO_DNS_OIDC_ISSUER") != "":
 		return oidcMiddleware(next)
+	case os.Getenv("HANZO_DNS_API_KEY") != "":
+		return authMiddleware(next)
+	case os.Getenv("HANZO_DNS_DEV_INSECURE") == "1":
+		return next
+	default:
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			writeError(w, http.StatusServiceUnavailable, "unconfigured", "authentication is not configured")
+		})
 	}
-	return authMiddleware(next)
 }
 
 // zoneBackend resolves how a zone's records are served. It returns (nil, "", nil)
@@ -89,15 +100,16 @@ func authChain(next http.Handler) http.Handler {
 // provider-backed zone it builds the connector from the org's KMS-sealed token
 // and resolves the provider's zone id. errZoneNotFound signals an unknown zone.
 func zoneBackend(r *http.Request, store *Store, zoneName string) (Provider, string, error) {
-	kind, ok := store.ZoneProvider(zoneName)
+	ctx := r.Context()
+	org := OrgIDFromContext(ctx)
+	kind, ok := store.ZoneProvider(org, zoneName)
 	if !ok {
 		return nil, "", errZoneNotFound
 	}
 	if kind == ProviderAuthoritative {
 		return nil, "", nil
 	}
-	ctx := r.Context()
-	prov, err := providerFor(ctx, OrgIDFromContext(ctx), kind)
+	prov, err := providerFor(ctx, org, kind)
 	if err != nil {
 		return nil, "", err
 	}
@@ -205,8 +217,12 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// reqOrg is the caller's validated org (the IAM `owner` claim), the single
+// tenant-isolation key for every zone/record operation.
+func reqOrg(r *http.Request) string { return OrgIDFromContext(r.Context()) }
+
 func handleListZones(w http.ResponseWriter, r *http.Request, store *Store) {
-	zones := store.ListZones()
+	zones := store.ListZones(reqOrg(r))
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"zones": zones,
 		"total": len(zones),
@@ -214,7 +230,7 @@ func handleListZones(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleGetZone(w http.ResponseWriter, r *http.Request, store *Store, zoneName string) {
-	z := store.GetZone(zoneName)
+	z := store.GetZone(reqOrg(r), zoneName)
 	if z == nil {
 		writeError(w, http.StatusNotFound, "not_found", "zone not found")
 		return
@@ -241,7 +257,7 @@ func handleCreateZone(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 
-	z, err := store.CreateZone(body.Zone, provider)
+	z, err := store.CreateZone(reqOrg(r), body.Zone, provider)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") {
 			writeError(w, http.StatusConflict, "conflict", err.Error())
@@ -254,7 +270,7 @@ func handleCreateZone(w http.ResponseWriter, r *http.Request, store *Store) {
 }
 
 func handleDeleteZone(w http.ResponseWriter, r *http.Request, store *Store, zoneName string) {
-	if err := store.DeleteZone(zoneName); err != nil {
+	if err := store.DeleteZone(reqOrg(r), zoneName); err != nil {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 		return
 	}
@@ -282,7 +298,7 @@ func handleListRecords(w http.ResponseWriter, r *http.Request, store *Store, zon
 		return
 	}
 
-	records, err := store.ListRecords(zoneName)
+	records, err := store.ListRecords(reqOrg(r), zoneName)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 		return
@@ -294,7 +310,7 @@ func handleListRecords(w http.ResponseWriter, r *http.Request, store *Store, zon
 }
 
 func handleGetRecord(w http.ResponseWriter, r *http.Request, store *Store, zoneName, recordID string) {
-	rec, err := store.GetRecord(zoneName, recordID)
+	rec, err := store.GetRecord(reqOrg(r), zoneName, recordID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 		return
@@ -348,12 +364,17 @@ func handleCreateRecord(w http.ResponseWriter, r *http.Request, store *Store, zo
 			writeError(w, http.StatusBadGateway, "provider_error", err.Error())
 			return
 		}
-		_ = store.PutMirror(zoneName, pr)
+		// The record exists in the provider; a mirror failure is not fatal to the
+		// request but must not be silent — CoreDNS won't serve it locally until a
+		// later list reconciles.
+		if merr := store.PutMirror(reqOrg(r), zoneName, pr); merr != nil {
+			log.Warningf("hanzodns: mirror of cloudflare record %s in %s failed: %s", pr.ID, zoneName, merr)
+		}
 		writeJSON(w, http.StatusCreated, toRecord(pr))
 		return
 	}
 
-	rec, err := store.CreateRecord(zoneName, body.Name, body.Type, body.TTL, body.Content, body.Priority, body.Proxied)
+	rec, err := store.CreateRecord(reqOrg(r), zoneName, body.Name, body.Type, body.TTL, body.Content, body.Priority, body.Proxied)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
@@ -378,24 +399,23 @@ func handleUpdateRecord(w http.ResponseWriter, r *http.Request, store *Store, zo
 		return
 	}
 	if prov != nil {
-		// Merge the patch onto the mirrored record to form the full desired
-		// state, then replace it in the provider and re-mirror the result.
-		cur, gerr := store.GetRecord(zoneName, recordID)
-		if gerr != nil {
-			writeError(w, http.StatusNotFound, "not_found", "record not found in local index; list the zone to refresh")
-			return
-		}
-		pr, uerr := prov.UpdateRecord(r.Context(), zoneID, recordID, applyPatch(cur, patch))
+		// Partial update straight to the provider: only the caller's changed
+		// fields are sent, so the provider applies the delta to the CURRENT
+		// upstream record and an out-of-band change to other fields is preserved
+		// (no stale local mirror can revert it). Re-mirror the returned record.
+		pr, uerr := prov.UpdateRecord(r.Context(), zoneID, recordID, patch)
 		if uerr != nil {
 			writeError(w, http.StatusBadGateway, "provider_error", uerr.Error())
 			return
 		}
-		_ = store.PutMirror(zoneName, pr)
+		if merr := store.PutMirror(reqOrg(r), zoneName, pr); merr != nil {
+			log.Warningf("hanzodns: mirror of cloudflare record %s in %s failed: %s", pr.ID, zoneName, merr)
+		}
 		writeJSON(w, http.StatusOK, toRecord(pr))
 		return
 	}
 
-	rec, err := store.UpdateRecord(zoneName, recordID, patch)
+	rec, err := store.UpdateRecord(reqOrg(r), zoneName, recordID, patch)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, "not_found", err.Error())
@@ -405,34 +425,6 @@ func handleUpdateRecord(w http.ResponseWriter, r *http.Request, store *Store, zo
 		return
 	}
 	writeJSON(w, http.StatusOK, rec)
-}
-
-// applyPatch merges a partial record patch onto the current record, yielding the
-// full desired state a provider PUT requires.
-func applyPatch(cur *Record, patch RecordPatch) RecordInput {
-	in := RecordInput{
-		Name: cur.Name, Type: string(cur.Type), Content: cur.Content,
-		TTL: cur.TTL, Proxied: cur.Proxied, Priority: cur.Priority,
-	}
-	if patch.Name != nil {
-		in.Name = *patch.Name
-	}
-	if patch.Type != nil {
-		in.Type = string(*patch.Type)
-	}
-	if patch.TTL != nil {
-		in.TTL = *patch.TTL
-	}
-	if patch.Content != nil {
-		in.Content = *patch.Content
-	}
-	if patch.Priority != nil {
-		in.Priority = *patch.Priority
-	}
-	if patch.Proxied != nil {
-		in.Proxied = *patch.Proxied
-	}
-	return in
 }
 
 func handleDeleteRecord(w http.ResponseWriter, r *http.Request, store *Store, zoneName, recordID string) {
@@ -446,12 +438,12 @@ func handleDeleteRecord(w http.ResponseWriter, r *http.Request, store *Store, zo
 			writeError(w, http.StatusBadGateway, "provider_error", derr.Error())
 			return
 		}
-		store.DropMirror(zoneName, recordID)
+		store.DropMirror(reqOrg(r), zoneName, recordID)
 		writeJSON(w, http.StatusOK, map[string]interface{}{})
 		return
 	}
 
-	if err := store.DeleteRecord(zoneName, recordID); err != nil {
+	if err := store.DeleteRecord(reqOrg(r), zoneName, recordID); err != nil {
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 		return
 	}

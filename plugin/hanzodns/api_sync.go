@@ -3,6 +3,7 @@ package hanzodns
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // SyncRequest is the top-level request body for POST /v1/dns/sync.
@@ -28,14 +29,22 @@ func handleSync(w http.ResponseWriter, r *http.Request, store *Store) {
 		return
 	}
 
+	// The owning org is the caller's validated `owner` claim, never the body, so
+	// a sync can only create or replace the caller's own zones.
+	org := reqOrg(r)
 	results := make([]SyncResponse, 0, len(body.Zones))
 	for _, zr := range body.Zones {
 		if zr.Zone == "" {
 			writeError(w, http.StatusBadRequest, "bad_request", "zone name is required in each entry")
 			return
 		}
-		resp, err := store.BulkSync(zr)
+		resp, err := store.BulkSync(org, zr)
 		if err != nil {
+			// A zone owned by another org is refused as a conflict, not a 500.
+			if strings.Contains(err.Error(), "already exists") {
+				writeError(w, http.StatusConflict, "conflict", err.Error())
+				return
+			}
 			writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
 			return
 		}

@@ -47,6 +47,12 @@ type Record struct {
 type Zone struct {
 	ID   string `json:"id"`
 	Name string `json:"zone"`
+	// Org is the tenant that owns this zone (the IAM `owner` claim). It is the
+	// single tenant-isolation key: every API operation is scoped to the caller's
+	// org, so one org can never see or mutate another's zones/records. Records
+	// inherit their zone's org. Stamped server-side on create — never client
+	// input.
+	Org string `json:"org"`
 	// Provider names the backend that serves this zone: "authoritative" (the
 	// default) means this CoreDNS store answers it directly; "cloudflare" means
 	// records are managed in the org's connected Cloudflare account.
@@ -102,13 +108,29 @@ func normZone(name string) string {
 	return name
 }
 
-// ListZones returns all zones.
-func (s *Store) ListZones() []Zone {
+// zoneForOrg returns the zone data for (org, name) ONLY when the zone exists and
+// is owned by org. It is the single tenant-isolation gate every org-scoped Store
+// method funnels through, so a caller can never reach another org's zone even if
+// a handler forgets to check — a foreign or absent zone is indistinguishably
+// "not found". The caller holds the appropriate lock.
+func (s *Store) zoneForOrg(org, name string) (*zoneData, bool) {
+	zd, ok := s.zones[normZone(name)]
+	if !ok || zd.zone.Org != org {
+		return nil, false
+	}
+	return zd, true
+}
+
+// ListZones returns the caller org's zones only.
+func (s *Store) ListZones(org string) []Zone {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	out := make([]Zone, 0, len(s.zones))
 	for _, zd := range s.zones {
+		if zd.zone.Org != org {
+			continue
+		}
 		z := zd.zone
 		z.RecordCount = len(zd.records)
 		out = append(out, z)
@@ -116,12 +138,13 @@ func (s *Store) ListZones() []Zone {
 	return out
 }
 
-// GetZone returns a zone by name or nil if not found.
-func (s *Store) GetZone(name string) *Zone {
+// GetZone returns the caller org's zone by name, or nil if not found or owned by
+// another org (indistinguishable, so existence is not confirmed cross-tenant).
+func (s *Store) GetZone(org, name string) *Zone {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	zd, ok := s.zones[normZone(name)]
+	zd, ok := s.zoneForOrg(org, name)
 	if !ok {
 		return nil
 	}
@@ -130,9 +153,10 @@ func (s *Store) GetZone(name string) *Zone {
 	return &z
 }
 
-// CreateZone adds a new zone served by the given provider ("authoritative" or
-// "cloudflare"). Returns an error if it already exists.
-func (s *Store) CreateZone(name, provider string) (*Zone, error) {
+// CreateZone adds a new zone owned by org, served by the given provider
+// ("authoritative" or "cloudflare"). Zone names are globally unique on the
+// shared nameservers, so a name already taken by ANY org is a conflict.
+func (s *Store) CreateZone(org, name, provider string) (*Zone, error) {
 	key := normZone(name)
 
 	s.mu.Lock()
@@ -145,6 +169,7 @@ func (s *Store) CreateZone(name, provider string) (*Zone, error) {
 	z := Zone{
 		ID:          uuid.New().String(),
 		Name:        key,
+		Org:         org,
 		Provider:    provider,
 		Status:      "active",
 		Nameservers: []string{"ns1.hanzo.ai.", "ns2.hanzo.ai."},
@@ -160,12 +185,13 @@ func (s *Store) CreateZone(name, provider string) (*Zone, error) {
 	return &z, nil
 }
 
-// ZoneProvider returns the provider serving the named zone and whether the zone
-// exists. An empty provider is normalized to "authoritative".
-func (s *Store) ZoneProvider(name string) (string, bool) {
+// ZoneProvider returns the provider serving the caller org's named zone and
+// whether such a zone exists for that org. An empty provider is normalized to
+// "authoritative".
+func (s *Store) ZoneProvider(org, name string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	zd, ok := s.zones[normZone(name)]
+	zd, ok := s.zoneForOrg(org, name)
 	if !ok {
 		return "", false
 	}
@@ -175,8 +201,9 @@ func (s *Store) ZoneProvider(name string) (string, bool) {
 	return zd.zone.Provider, true
 }
 
-// DeleteZone removes a zone and all its records.
-func (s *Store) DeleteZone(name string) error {
+// DeleteZone removes the caller org's zone and all its records. A foreign or
+// absent zone is "not found".
+func (s *Store) DeleteZone(org, name string) error {
 	key := normZone(name)
 
 	changed := false
@@ -188,7 +215,7 @@ func (s *Store) DeleteZone(name string) error {
 	}()
 	defer s.mu.Unlock()
 
-	if _, exists := s.zones[key]; !exists {
+	if _, ok := s.zoneForOrg(org, name); !ok {
 		return fmt.Errorf("zone %q not found", key)
 	}
 	delete(s.zones, key)
@@ -196,14 +223,14 @@ func (s *Store) DeleteZone(name string) error {
 	return nil
 }
 
-// ListRecords returns all records for a zone.
-func (s *Store) ListRecords(zone string) ([]Record, error) {
+// ListRecords returns all records for the caller org's zone.
+func (s *Store) ListRecords(org, zone string) ([]Record, error) {
 	key := normZone(zone)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return nil, fmt.Errorf("zone %q not found", key)
 	}
@@ -215,14 +242,14 @@ func (s *Store) ListRecords(zone string) ([]Record, error) {
 	return out, nil
 }
 
-// GetRecord returns a single record by zone and ID.
-func (s *Store) GetRecord(zone, id string) (*Record, error) {
+// GetRecord returns a single record by the caller org's zone and ID.
+func (s *Store) GetRecord(org, zone, id string) (*Record, error) {
 	key := normZone(zone)
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return nil, fmt.Errorf("zone %q not found", key)
 	}
@@ -234,8 +261,8 @@ func (s *Store) GetRecord(zone, id string) (*Record, error) {
 	return &cp, nil
 }
 
-// CreateRecord adds a record to a zone. Returns the created record.
-func (s *Store) CreateRecord(zone string, name string, rtype RecordType, ttl uint32, content string, priority uint16, proxied bool) (*Record, error) {
+// CreateRecord adds a record to the caller org's zone. Returns the created record.
+func (s *Store) CreateRecord(org, zone string, name string, rtype RecordType, ttl uint32, content string, priority uint16, proxied bool) (*Record, error) {
 	key := normZone(zone)
 
 	if !ValidRecordTypes[rtype] {
@@ -251,7 +278,7 @@ func (s *Store) CreateRecord(zone string, name string, rtype RecordType, ttl uin
 	}()
 	defer s.mu.Unlock()
 
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return nil, fmt.Errorf("zone %q not found", key)
 	}
@@ -282,7 +309,7 @@ func (s *Store) CreateRecord(zone string, name string, rtype RecordType, ttl uin
 // id) into this store, so CoreDNS can serve the zone locally and the local API
 // stays consistent with the provider. Unlike CreateRecord it neither generates
 // an id nor rejects an existing one.
-func (s *Store) PutMirror(zone string, rec ProviderRecord) error {
+func (s *Store) PutMirror(org, zone string, rec ProviderRecord) error {
 	key := normZone(zone)
 	if rec.ID == "" {
 		return fmt.Errorf("mirror record requires an id")
@@ -300,7 +327,7 @@ func (s *Store) PutMirror(zone string, rec ProviderRecord) error {
 	}()
 	defer s.mu.Unlock()
 
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return fmt.Errorf("zone %q not found", key)
 	}
@@ -328,8 +355,7 @@ func (s *Store) PutMirror(zone string, rec ProviderRecord) error {
 
 // DropMirror removes a mirrored record by id if present. Absence is not an
 // error (the local index is best-effort relative to the provider).
-func (s *Store) DropMirror(zone, id string) {
-	key := normZone(zone)
+func (s *Store) DropMirror(org, zone, id string) {
 	changed := false
 	s.mu.Lock()
 	defer func() {
@@ -338,7 +364,7 @@ func (s *Store) DropMirror(zone, id string) {
 		}
 	}()
 	defer s.mu.Unlock()
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return
 	}
@@ -349,8 +375,9 @@ func (s *Store) DropMirror(zone, id string) {
 	}
 }
 
-// UpdateRecord patches a record. Only non-zero fields are updated.
-func (s *Store) UpdateRecord(zone, id string, patch RecordPatch) (*Record, error) {
+// UpdateRecord patches a record in the caller org's zone. Only non-zero fields
+// are updated.
+func (s *Store) UpdateRecord(org, zone, id string, patch RecordPatch) (*Record, error) {
 	key := normZone(zone)
 
 	changed := false
@@ -362,7 +389,7 @@ func (s *Store) UpdateRecord(zone, id string, patch RecordPatch) (*Record, error
 	}()
 	defer s.mu.Unlock()
 
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return nil, fmt.Errorf("zone %q not found", key)
 	}
@@ -400,8 +427,8 @@ func (s *Store) UpdateRecord(zone, id string, patch RecordPatch) (*Record, error
 	return &cp, nil
 }
 
-// DeleteRecord removes a record from a zone.
-func (s *Store) DeleteRecord(zone, id string) error {
+// DeleteRecord removes a record from the caller org's zone.
+func (s *Store) DeleteRecord(org, zone, id string) error {
 	key := normZone(zone)
 
 	changed := false
@@ -413,7 +440,7 @@ func (s *Store) DeleteRecord(zone, id string) error {
 	}()
 	defer s.mu.Unlock()
 
-	zd, ok := s.zones[key]
+	zd, ok := s.zoneForOrg(org, zone)
 	if !ok {
 		return fmt.Errorf("zone %q not found", key)
 	}
