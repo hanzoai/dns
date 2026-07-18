@@ -45,8 +45,12 @@ type Record struct {
 
 // Zone represents a DNS zone and its records.
 type Zone struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"zone"`
+	ID   string `json:"id"`
+	Name string `json:"zone"`
+	// Provider names the backend that serves this zone: "authoritative" (the
+	// default) means this CoreDNS store answers it directly; "cloudflare" means
+	// records are managed in the org's connected Cloudflare account.
+	Provider      string    `json:"provider"`
 	Status        string    `json:"status"`
 	Nameservers   []string  `json:"nameservers"`
 	RecordCount   int       `json:"record_count"`
@@ -55,10 +59,17 @@ type Zone struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// Store provides thread-safe in-memory storage for DNS zones and records.
+// Store provides thread-safe in-memory storage for DNS zones and records. It is
+// the authoritative backend for zones whose provider is "authoritative", and a
+// local index/serving cache for provider-backed zones. A durable snapshot
+// (store_snapshot.go) can persist it across restarts.
 type Store struct {
-	mu      sync.RWMutex
-	zones   map[string]*zoneData // keyed by normalized zone name (e.g. "example.com.")
+	mu    sync.RWMutex
+	zones map[string]*zoneData // keyed by normalized zone name (e.g. "example.com.")
+
+	// onChange, if set, is invoked (without the lock held) after any mutation so
+	// a snapshot can be persisted. Wired by the snapshot layer; nil in tests.
+	onChange func()
 }
 
 type zoneData struct {
@@ -70,6 +81,15 @@ type zoneData struct {
 func NewStore() *Store {
 	return &Store{
 		zones: make(map[string]*zoneData),
+	}
+}
+
+// notify invokes the change hook (if any) so the durable snapshot is rewritten.
+// Called after the write lock is released to keep persistence off the hot path
+// of the lock.
+func (s *Store) notify() {
+	if s.onChange != nil {
+		s.onChange()
 	}
 }
 
@@ -110,14 +130,14 @@ func (s *Store) GetZone(name string) *Zone {
 	return &z
 }
 
-// CreateZone adds a new zone. Returns error if it already exists.
-func (s *Store) CreateZone(name string) (*Zone, error) {
+// CreateZone adds a new zone served by the given provider ("authoritative" or
+// "cloudflare"). Returns an error if it already exists.
+func (s *Store) CreateZone(name, provider string) (*Zone, error) {
 	key := normZone(name)
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, exists := s.zones[key]; exists {
+		s.mu.Unlock()
 		return nil, fmt.Errorf("zone %q already exists", key)
 	}
 
@@ -125,6 +145,7 @@ func (s *Store) CreateZone(name string) (*Zone, error) {
 	z := Zone{
 		ID:          uuid.New().String(),
 		Name:        key,
+		Provider:    provider,
 		Status:      "active",
 		Nameservers: []string{"ns1.hanzo.ai.", "ns2.hanzo.ai."},
 		CreatedAt:   now,
@@ -134,20 +155,44 @@ func (s *Store) CreateZone(name string) (*Zone, error) {
 		zone:    z,
 		records: make(map[string]*Record),
 	}
+	s.mu.Unlock()
+	s.notify()
 	return &z, nil
+}
+
+// ZoneProvider returns the provider serving the named zone and whether the zone
+// exists. An empty provider is normalized to "authoritative".
+func (s *Store) ZoneProvider(name string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	zd, ok := s.zones[normZone(name)]
+	if !ok {
+		return "", false
+	}
+	if zd.zone.Provider == "" {
+		return ProviderAuthoritative, true
+	}
+	return zd.zone.Provider, true
 }
 
 // DeleteZone removes a zone and all its records.
 func (s *Store) DeleteZone(name string) error {
 	key := normZone(name)
 
+	changed := false
 	s.mu.Lock()
+	defer func() {
+		if changed {
+			s.notify()
+		}
+	}()
 	defer s.mu.Unlock()
 
 	if _, exists := s.zones[key]; !exists {
 		return fmt.Errorf("zone %q not found", key)
 	}
 	delete(s.zones, key)
+	changed = true
 	return nil
 }
 
@@ -197,7 +242,13 @@ func (s *Store) CreateRecord(zone string, name string, rtype RecordType, ttl uin
 		return nil, fmt.Errorf("invalid record type %q", rtype)
 	}
 
+	changed := false
 	s.mu.Lock()
+	defer func() {
+		if changed {
+			s.notify()
+		}
+	}()
 	defer s.mu.Unlock()
 
 	zd, ok := s.zones[key]
@@ -220,16 +271,95 @@ func (s *Store) CreateRecord(zone string, name string, rtype RecordType, ttl uin
 	zd.records[r.ID] = r
 
 	zd.zone.UpdatedAt = now
+	changed = true
 
 	cp := *r
 	return &cp, nil
+}
+
+// PutMirror upserts a record with an explicit id into a zone's local index.
+// It is used to mirror a provider-backed record (keyed by the PROVIDER's record
+// id) into this store, so CoreDNS can serve the zone locally and the local API
+// stays consistent with the provider. Unlike CreateRecord it neither generates
+// an id nor rejects an existing one.
+func (s *Store) PutMirror(zone string, rec ProviderRecord) error {
+	key := normZone(zone)
+	if rec.ID == "" {
+		return fmt.Errorf("mirror record requires an id")
+	}
+	if !ValidRecordTypes[RecordType(rec.Type)] {
+		return fmt.Errorf("invalid record type %q", rec.Type)
+	}
+
+	changed := false
+	s.mu.Lock()
+	defer func() {
+		if changed {
+			s.notify()
+		}
+	}()
+	defer s.mu.Unlock()
+
+	zd, ok := s.zones[key]
+	if !ok {
+		return fmt.Errorf("zone %q not found", key)
+	}
+	now := time.Now().UTC()
+	existing, ok := zd.records[rec.ID]
+	created := now
+	if ok {
+		created = existing.CreatedAt
+	}
+	zd.records[rec.ID] = &Record{
+		ID:        rec.ID,
+		Name:      rec.Name,
+		Type:      RecordType(rec.Type),
+		TTL:       rec.TTL,
+		Content:   rec.Content,
+		Priority:  rec.Priority,
+		Proxied:   rec.Proxied,
+		CreatedAt: created,
+		UpdatedAt: now,
+	}
+	zd.zone.UpdatedAt = now
+	changed = true
+	return nil
+}
+
+// DropMirror removes a mirrored record by id if present. Absence is not an
+// error (the local index is best-effort relative to the provider).
+func (s *Store) DropMirror(zone, id string) {
+	key := normZone(zone)
+	changed := false
+	s.mu.Lock()
+	defer func() {
+		if changed {
+			s.notify()
+		}
+	}()
+	defer s.mu.Unlock()
+	zd, ok := s.zones[key]
+	if !ok {
+		return
+	}
+	if _, ok := zd.records[id]; ok {
+		delete(zd.records, id)
+		zd.zone.UpdatedAt = time.Now().UTC()
+		changed = true
+	}
 }
 
 // UpdateRecord patches a record. Only non-zero fields are updated.
 func (s *Store) UpdateRecord(zone, id string, patch RecordPatch) (*Record, error) {
 	key := normZone(zone)
 
+	changed := false
 	s.mu.Lock()
+	defer func() {
+		if changed {
+			s.notify()
+		}
+	}()
 	defer s.mu.Unlock()
 
 	zd, ok := s.zones[key]
@@ -264,6 +394,7 @@ func (s *Store) UpdateRecord(zone, id string, patch RecordPatch) (*Record, error
 	}
 	r.UpdatedAt = time.Now().UTC()
 	zd.zone.UpdatedAt = r.UpdatedAt
+	changed = true
 
 	cp := *r
 	return &cp, nil
@@ -273,7 +404,13 @@ func (s *Store) UpdateRecord(zone, id string, patch RecordPatch) (*Record, error
 func (s *Store) DeleteRecord(zone, id string) error {
 	key := normZone(zone)
 
+	changed := false
 	s.mu.Lock()
+	defer func() {
+		if changed {
+			s.notify()
+		}
+	}()
 	defer s.mu.Unlock()
 
 	zd, ok := s.zones[key]
@@ -285,6 +422,7 @@ func (s *Store) DeleteRecord(zone, id string) error {
 	}
 	delete(zd.records, id)
 	zd.zone.UpdatedAt = time.Now().UTC()
+	changed = true
 	return nil
 }
 
