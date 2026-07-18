@@ -61,7 +61,7 @@ func init() {
 }
 
 type latencyAdapter struct {
-	m *metric.HistogramVec
+	m metric.HistogramVec
 }
 
 func (l *latencyAdapter) Observe(_ context.Context, verb string, u url.URL, latency time.Duration) {
@@ -69,7 +69,7 @@ func (l *latencyAdapter) Observe(_ context.Context, verb string, u url.URL, late
 }
 
 type resultAdapter struct {
-	m *metric.CounterVec
+	m metric.CounterVec
 }
 
 func (r *resultAdapter) Increment(_ context.Context, code, method, host string) {
