@@ -15,7 +15,7 @@ func TestBulkSync(t *testing.T) {
 	store := NewStore()
 
 	// Sync a zone with records.
-	resp, err := store.BulkSync(SyncZoneRequest{
+	resp, err := store.BulkSync(testOrg, SyncZoneRequest{
 		Zone: "example.com",
 		Records: []SyncRecord{
 			{Name: "www", Type: TypeA, Content: "1.2.3.4", TTL: 300},
@@ -29,12 +29,12 @@ func TestBulkSync(t *testing.T) {
 	assert.Equal(t, 0, resp.Deleted)
 
 	// Verify records are in store.
-	records, err := store.ListRecords("example.com")
+	records, err := store.ListRecords(testOrg, "example.com")
 	require.NoError(t, err)
 	assert.Len(t, records, 2)
 
 	// Re-sync with different records — old ones should be replaced.
-	resp, err = store.BulkSync(SyncZoneRequest{
+	resp, err = store.BulkSync(testOrg, SyncZoneRequest{
 		Zone: "example.com",
 		Records: []SyncRecord{
 			{Name: "api", Type: TypeA, Content: "5.6.7.8", TTL: 60},
@@ -46,7 +46,7 @@ func TestBulkSync(t *testing.T) {
 	assert.Equal(t, 2, resp.Deleted)
 
 	// Verify old records are gone.
-	records, err = store.ListRecords("example.com")
+	records, err = store.ListRecords(testOrg, "example.com")
 	require.NoError(t, err)
 	assert.Len(t, records, 1)
 	assert.Equal(t, "api", records[0].Name)
@@ -56,9 +56,9 @@ func TestBulkSyncCreatesZone(t *testing.T) {
 	store := NewStore()
 
 	// Zone should not exist yet.
-	assert.Nil(t, store.GetZone("newzone.io"))
+	assert.Nil(t, store.GetZone(testOrg, "newzone.io"))
 
-	resp, err := store.BulkSync(SyncZoneRequest{
+	resp, err := store.BulkSync(testOrg, SyncZoneRequest{
 		Zone: "newzone.io",
 		Records: []SyncRecord{
 			{Name: "@", Type: TypeA, Content: "10.0.0.1"},
@@ -68,7 +68,7 @@ func TestBulkSyncCreatesZone(t *testing.T) {
 	assert.Equal(t, 1, resp.RecordCount)
 
 	// Zone should now exist.
-	z := store.GetZone("newzone.io")
+	z := store.GetZone(testOrg, "newzone.io")
 	require.NotNil(t, z)
 	assert.Equal(t, "active", z.Status)
 }
@@ -76,7 +76,7 @@ func TestBulkSyncCreatesZone(t *testing.T) {
 func TestBulkSyncSkipsInvalidTypes(t *testing.T) {
 	store := NewStore()
 
-	resp, err := store.BulkSync(SyncZoneRequest{
+	resp, err := store.BulkSync(testOrg, SyncZoneRequest{
 		Zone: "test.com",
 		Records: []SyncRecord{
 			{Name: "www", Type: TypeA, Content: "1.2.3.4"},
@@ -114,7 +114,8 @@ func TestSyncEndpoint(t *testing.T) {
 	}
 
 	b, _ := json.Marshal(body)
-	req := httptest.NewRequest(http.MethodPost, "/v1/dns/sync", bytes.NewReader(b))
+	req := httptest.NewRequest(http.MethodPost, "/v1/dns/sync", bytes.NewReader(b)).
+		WithContext(ctxWithPrincipal(testOrg, "b"))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -128,7 +129,7 @@ func TestSyncEndpoint(t *testing.T) {
 	assert.Equal(t, float64(2), result["total"])
 
 	// Verify both zones exist.
-	zones := store.ListZones()
+	zones := store.ListZones(testOrg)
 	assert.Len(t, zones, 2)
 }
 
