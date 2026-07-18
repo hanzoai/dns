@@ -7,7 +7,7 @@ import (
 func TestCreateAndListZones(t *testing.T) {
 	s := NewStore()
 
-	z, err := s.CreateZone("example.com")
+	z, err := s.CreateZone("example.com", ProviderAuthoritative)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,17 +26,17 @@ func TestCreateAndListZones(t *testing.T) {
 
 func TestDuplicateZone(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com"); err != nil {
+	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateZone("example.com."); err == nil {
+	if _, err := s.CreateZone("example.com.", ProviderAuthoritative); err == nil {
 		t.Fatal("expected error for duplicate zone")
 	}
 }
 
 func TestDeleteZone(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com"); err != nil {
+	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteZone("example.com"); err != nil {
@@ -49,7 +49,7 @@ func TestDeleteZone(t *testing.T) {
 
 func TestCRUDRecords(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com"); err != nil {
+	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,7 +102,7 @@ func TestCRUDRecords(t *testing.T) {
 
 func TestCreateRecordInvalidType(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com"); err != nil {
+	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CreateRecord("example.com", "www", RecordType("BOGUS"), 300, "1.2.3.4", 0, false); err == nil {
@@ -119,7 +119,7 @@ func TestCreateRecordNoZone(t *testing.T) {
 
 func TestLookup(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com"); err != nil {
+	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CreateRecord("example.com", "www", TypeA, 300, "1.2.3.4", 0, false); err != nil {
@@ -153,8 +153,8 @@ func TestLookup(t *testing.T) {
 
 func TestZoneNames(t *testing.T) {
 	s := NewStore()
-	s.CreateZone("a.com")
-	s.CreateZone("b.com")
+	s.CreateZone("a.com", ProviderAuthoritative)
+	s.CreateZone("b.com", ProviderAuthoritative)
 
 	names := s.ZoneNames()
 	if len(names) != 2 {
