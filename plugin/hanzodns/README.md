@@ -20,15 +20,19 @@ hanzodns [ADDR]
 
 ## Authentication
 
-The API has one auth boundary, selected by configuration:
+The API has one auth boundary, selected by configuration, and **fails closed**:
 
-- **OIDC (production).** Set `HANZO_DNS_OIDC_ISSUER` (e.g. `https://hanzo.id`) to validate the caller's IAM JWT on every endpoint (except `/v1/dns/health`). The middleware extracts the org (the `owner` claim) and keeps the caller's bearer for the provider path. Optionally set `HANZO_DNS_OIDC_AUDIENCE` to also enforce the audience.
-- **Static key (standalone).** When no issuer is set, `HANZO_DNS_API_KEY` requires a shared Bearer token. Authoritative zones work; provider dispatch (which needs the org + bearer) is OIDC-only.
-- **Open (dev).** With neither set, all requests are allowed.
+- **OIDC (production, multi-tenant).** Set `HANZO_DNS_OIDC_ISSUER` (e.g. `https://hanzo.id`) to validate the caller's IAM JWT on every endpoint (except `/v1/dns/health`). The middleware requires a signed, unexpired token, extracts the org (the `owner` claim), and keeps the caller's bearer for the provider path. Set `HANZO_DNS_OIDC_AUDIENCE` to a comma-separated allowlist to also enforce the audience (reject tokens minted for other services) — required in production.
+- **Static key (standalone, single-tenant).** With no issuer, `HANZO_DNS_API_KEY` requires a shared Bearer token.
+- **Denied.** With neither configured the API returns 503 — the anonymous "allow all" is reachable ONLY behind an explicit `HANZO_DNS_DEV_INSECURE=1` opt-in, never by default.
 
 ```
 Authorization: Bearer <token>
 ```
+
+### Tenant isolation
+
+Every zone is owned by the org that created it (the validated `owner` claim), and org is the single isolation key enforced inside the store, not just at the edge: a caller only ever lists, reads, or mutates its own org's zones and records. A request for another org's zone or record is `404` (existence is never confirmed cross-tenant), and `/v1/dns/sync` can only create or replace the caller's own zones. Multi-tenant deployments therefore require OIDC (the static-key mode is single-tenant).
 
 ## Providers
 
