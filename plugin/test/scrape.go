@@ -32,6 +32,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/encoding/protodelim"
 )
 
@@ -251,7 +252,11 @@ func fetchMetricFamilies(url string, ch chan<- *dto.MetricFamily) {
 		// We could do further content-type checks here, but the
 		// fallback for now will anyway be the text format
 		// version 0.0.4, so just go for it and see if it works.
-		var parser expfmt.TextParser
+		// Select a metric-name validation scheme explicitly: client_golang would
+		// normally set the global default, but CoreDNS renders exposition via
+		// luxfi/metric and never imports it, so a zero-value parser defaults to
+		// UnsetValidation and panics. UTF-8 is the current Prometheus default.
+		parser := expfmt.NewTextParser(model.UTF8Validation)
 		metricFamilies, err := parser.TextToMetricFamilies(resp.Body)
 		if err != nil {
 			return

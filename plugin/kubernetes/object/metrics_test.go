@@ -5,27 +5,31 @@ import (
 	"time"
 
 	metric "github.com/luxfi/metric"
-	dto "github.com/prometheus/client_model/go"
 	api "k8s.io/api/core/v1"
 )
 
-// histSampleCount reads the sample count for a specific service_kind label
-// from a HistogramVec.
-func histSampleCount(t *testing.T, vec *metric.HistogramVec, label string) uint64 {
+// histSampleCount gathers reg and returns the observation count of the named
+// histogram for the given service_kind label. A label with no observations is
+// absent from the gathered families, so it reports 0.
+func histSampleCount(t *testing.T, reg metric.Registry, name, label string) uint64 {
 	t.Helper()
-	obs, err := vec.GetMetricWithLabelValues(label)
+	families, err := reg.Gather()
 	if err != nil {
-		t.Fatalf("GetMetricWithLabelValues(%q): %v", label, err)
+		t.Fatalf("gather: %v", err)
 	}
-	m, ok := obs.(metric.Metric)
-	if !ok {
-		t.Fatalf("observer for label %q does not implement metric.Metric", label)
+	for _, mf := range families {
+		if mf.Name != name {
+			continue
+		}
+		for _, m := range mf.Metrics {
+			for _, lp := range m.Labels {
+				if lp.Name == "service_kind" && lp.Value == label {
+					return m.Value.SampleCount
+				}
+			}
+		}
 	}
-	pb := &dto.Metric{}
-	if err := m.Write(pb); err != nil {
-		t.Fatalf("Write metric for label %q: %v", label, err)
-	}
-	return pb.GetHistogram().GetSampleCount()
+	return 0
 }
 
 // NOTE: subtests in this function must NOT call t.Parallel() — they swap
@@ -99,7 +103,7 @@ func TestEndpointLatencyRecorder_record(t *testing.T) {
 
 			rec.record()
 
-			got := histSampleCount(t, DNSProgrammingLatency, tc.wantLabel)
+			got := histSampleCount(t, reg, "test_dns_programming_duration_seconds", tc.wantLabel)
 			if got != tc.wantSampleCount {
 				t.Errorf("sample count for label %q = %d, want %d", tc.wantLabel, got, tc.wantSampleCount)
 			}

@@ -24,13 +24,13 @@ jobs:
         id: go
 
       - name: Build
-        run: go build -v ./...
+        run: go build -v -tags metrics ./...
 
       - name: Test
         run: |
-          ( cd request; go test -race ./... )
-          ( cd core; go test -race  ./... )
-          ( cd coremain; go test -race ./... )
+          ( cd request; go test -race -tags metrics ./... )
+          ( cd core; go test -race -tags metrics ./... )
+          ( cd coremain; go test -race -tags metrics ./... )
 
   test-windows:
     name: Test Windows
@@ -48,14 +48,14 @@ jobs:
         id: go
 
       - name: Build
-        run: go build -v ./...
+        run: go build -v -tags metrics ./...
 
       - name: Test
         shell: bash
         run: |
-          ( cd request; go test -race ./... )
-          ( cd core; go test -race  ./... )
-          ( cd coremain; go test -race ./... )
+          ( cd request; go test -race -tags metrics ./... )
+          ( cd core; go test -race -tags metrics ./... )
+          ( cd coremain; go test -race -tags metrics ./... )
 
   test-plugins:
     name: Test Plugins
@@ -73,10 +73,10 @@ jobs:
         id: go
 
       - name: Build
-        run: go build -v ./...
+        run: go build -v -tags metrics ./...
 
       - name: Test
-        run: ( cd plugin; go test -race ./... )
+        run: ( cd plugin; go test -race -tags metrics ./... )
 
   test-e2e:
     name: Test e2e
@@ -94,12 +94,12 @@ jobs:
         id: go
 
       - name: Build
-        run: go build -v ./...
+        run: go build -v -tags metrics ./...
 
       - name: Test
         run: |
           go install github.com/fatih/faillint@c56e3ec6dbfc933bbeb884fd31f2bcd41f712657 # v1.15.0
-          ( cd test; go test -race ./... )
+          ( cd test; go test -race -tags metrics ./... )
 
   test-makefile-release:
     name: Test Makefile.release
