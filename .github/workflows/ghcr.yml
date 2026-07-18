@@ -1,24 +1,91 @@
 name: Build and Push to GHCR
 
+# Self-contained image lane for ghcr.io/hanzoai/dns. amd64 only (DOKS is all
+# amd64), built on the self-hosted hanzo-build-linux-amd64 ARC pool. The coredns
+# binary is a static CGO-free Go build produced ON the runner, then the scratch
+# Dockerfile COPYs it in — so the image build needs no in-container module fetch.
+# semver-pinned, never :latest (K8s caches floating tags).
+#
+# Replaces the prior `uses: hanzoai/.github/.github/workflows/docker-build.yml@main`
+# call, which startup-failed. A tag push publishes the semver image (v0.11.1 →
+# 0.11.1); workflow_dispatch publishes an explicit version (mint a release image
+# without moving a tag); a main push publishes a sha tag for pipeline validation.
+
 on:
   push:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to publish (e.g. 0.11.1)"
+        required: true
+        default: "0.11.1"
+
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  docker:
-    uses: hanzoai/.github/.github/workflows/docker-build.yml@main
-    with:
-      image: ghcr.io/hanzoai/dns
-      pre-build-command: |
-        go generate coredns.go
-        GITCOMMIT=$(git describe --dirty --always)
-        CGO_ENABLED=0 go build -v -tags="grpcnotrace metrics" \
-          -ldflags="-s -w -X github.com/coredns/coredns/coremain.GitCommit=${GITCOMMIT}" \
-          -o coredns
-    secrets: inherit
+  build:
+    runs-on: hanzo-build-linux-amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so `git describe` can embed the version.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: .go-version
+
+      - name: Build coredns binary
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          GITCOMMIT=$(git describe --dirty --always)
+          go build -v -tags="grpcnotrace metrics" \
+            -ldflags="-s -w -X github.com/coredns/coredns/coremain.GitCommit=${GITCOMMIT}" \
+            -o coredns
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/hanzoai/dns
+          # tag push v0.11.1 → 1.11.1? no: {{version}} strips the leading v →
+          # 0.11.1. dispatch → the explicit input. main push → sha-<short>.
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=sha,enable=${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          flavor: |
+            latest=false
+
+      - name: Build and push amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
