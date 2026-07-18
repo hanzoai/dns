@@ -20,11 +20,25 @@ import (
 
 type contextKey string
 
-const orgIDKey contextKey = "org_id"
+const (
+	orgIDKey  contextKey = "org_id"
+	bearerKey contextKey = "bearer"
+)
 
-// OrgIDFromContext returns the org_id extracted from the JWT token.
+// OrgIDFromContext returns the caller's org (the IAM `owner` claim) extracted
+// from the validated JWT. It is the tenant key used to scope every per-org
+// operation, including the KMS secret read.
 func OrgIDFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(orgIDKey).(string)
+	return v
+}
+
+// BearerFromContext returns the caller's raw, validated bearer token so a
+// downstream org-scoped call (the KMS secret read) can be authorized as the
+// SAME principal. hanzodns holds no standing cross-tenant credential of its own:
+// it relays the caller's authority and lets the target enforce org isolation.
+func BearerFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(bearerKey).(string)
 	return v
 }
 
@@ -63,7 +77,8 @@ func oidcMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), orgIDKey, claims.OrgID)
+		ctx := context.WithValue(r.Context(), orgIDKey, claims.org())
+		ctx = context.WithValue(ctx, bearerKey, parts[1])
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -74,7 +89,20 @@ type jwtClaims struct {
 	Audience string `json:"aud"`
 	Expiry   int64  `json:"exp"`
 	IssuedAt int64  `json:"iat"`
-	OrgID    string `json:"org_id"`
+	// Owner is the canonical Hanzo IAM org claim (the org slug). It is the same
+	// value cloud/gateway derive tenancy from, so using it here keeps the KMS
+	// org path in lockstep with KMS's org-scope guard.
+	Owner string `json:"owner"`
+	OrgID string `json:"org_id"`
+}
+
+// org returns the caller's org, preferring the canonical `owner` claim and
+// falling back to `org_id` for tokens that only carry the legacy field.
+func (c *jwtClaims) org() string {
+	if c.Owner != "" {
+		return c.Owner
+	}
+	return c.OrgID
 }
 
 type jwk struct {

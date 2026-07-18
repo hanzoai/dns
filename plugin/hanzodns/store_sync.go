@@ -38,6 +38,7 @@ func (s *Store) BulkSync(req SyncZoneRequest) (*SyncResponse, error) {
 	key := normZone(req.Zone)
 
 	s.mu.Lock()
+	defer s.notify()
 	defer s.mu.Unlock()
 
 	now := time.Now().UTC()
