@@ -4,7 +4,9 @@ BINARY:=coredns
 SYSTEM:=
 CHECKS:=check
 BUILDOPTS?=-v
-GOTAGS?=grpcnotrace
+# metrics: activate luxfi/metric's collecting registry (the default is a no-op
+# stub gated behind //go:build metrics); CoreDNS's /metrics needs it.
+GOTAGS?=grpcnotrace metrics
 GOPATH?=$(HOME)/go
 MAKEPWD:=$(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 CGO_ENABLED?=0

@@ -18,7 +18,7 @@ jobs:
       pre-build-command: |
         go generate coredns.go
         GITCOMMIT=$(git describe --dirty --always)
-        CGO_ENABLED=0 go build -v -tags="grpcnotrace" \
+        CGO_ENABLED=0 go build -v -tags="grpcnotrace metrics" \
           -ldflags="-s -w -X github.com/coredns/coredns/coremain.GitCommit=${GITCOMMIT}" \
           -o coredns
     secrets: inherit

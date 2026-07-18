@@ -7,7 +7,6 @@ import (
 	"github.com/coredns/coredns/plugin/test"
 	"github.com/coredns/coredns/request"
 
-	metric "github.com/luxfi/metric"
 	"github.com/miekg/dns"
 )
 
@@ -88,11 +87,11 @@ func TestReportWithOptions(t *testing.T) {
 			net := state.Proto()
 			fam := "1"
 
-			countBefore := testutil.ToFloat64(RequestCount.WithLabelValues("dns://:53", "example.org.", "", net, fam, qType))
+			countBefore := RequestCount.WithLabelValues("dns://:53", "example.org.", "", net, fam, qType).Get()
 
 			Report("dns://:53", state, "example.org.", "", "NOERROR", "test", 100, time.Now(), opts...)
 
-			countAfter := testutil.ToFloat64(RequestCount.WithLabelValues("dns://:53", "example.org.", "", net, fam, qType))
+			countAfter := RequestCount.WithLabelValues("dns://:53", "example.org.", "", net, fam, qType).Get()
 			if countAfter <= countBefore {
 				t.Errorf("RequestCount was not incremented. Before: %f, After: %f", countBefore, countAfter)
 			}
