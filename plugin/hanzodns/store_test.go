@@ -7,7 +7,7 @@ import (
 func TestCreateAndListZones(t *testing.T) {
 	s := NewStore()
 
-	z, err := s.CreateZone("example.com", ProviderAuthoritative)
+	z, err := s.CreateZone(testOrg, "example.com", ProviderAuthoritative)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -18,7 +18,7 @@ func TestCreateAndListZones(t *testing.T) {
 		t.Fatalf("expected active, got %s", z.Status)
 	}
 
-	zones := s.ListZones()
+	zones := s.ListZones(testOrg)
 	if len(zones) != 1 {
 		t.Fatalf("expected 1 zone, got %d", len(zones))
 	}
@@ -26,35 +26,35 @@ func TestCreateAndListZones(t *testing.T) {
 
 func TestDuplicateZone(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
+	if _, err := s.CreateZone(testOrg, "example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateZone("example.com.", ProviderAuthoritative); err == nil {
+	if _, err := s.CreateZone(testOrg, "example.com.", ProviderAuthoritative); err == nil {
 		t.Fatal("expected error for duplicate zone")
 	}
 }
 
 func TestDeleteZone(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
+	if _, err := s.CreateZone(testOrg, "example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteZone("example.com"); err != nil {
+	if err := s.DeleteZone(testOrg, "example.com"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteZone("example.com"); err == nil {
+	if err := s.DeleteZone(testOrg, "example.com"); err == nil {
 		t.Fatal("expected error deleting nonexistent zone")
 	}
 }
 
 func TestCRUDRecords(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
+	if _, err := s.CreateZone(testOrg, "example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create
-	rec, err := s.CreateRecord("example.com", "www", TypeA, 300, "1.2.3.4", 0, false)
+	rec, err := s.CreateRecord(testOrg, "example.com", "www", TypeA, 300, "1.2.3.4", 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestCRUDRecords(t *testing.T) {
 	}
 
 	// List
-	records, err := s.ListRecords("example.com")
+	records, err := s.ListRecords(testOrg, "example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestCRUDRecords(t *testing.T) {
 	}
 
 	// Get
-	got, err := s.GetRecord("example.com", rec.ID)
+	got, err := s.GetRecord(testOrg, "example.com", rec.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestCRUDRecords(t *testing.T) {
 
 	// Update
 	newContent := "5.6.7.8"
-	updated, err := s.UpdateRecord("example.com", rec.ID, RecordPatch{Content: &newContent})
+	updated, err := s.UpdateRecord(testOrg, "example.com", rec.ID, RecordPatch{Content: &newContent})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,10 +91,10 @@ func TestCRUDRecords(t *testing.T) {
 	}
 
 	// Delete
-	if err := s.DeleteRecord("example.com", rec.ID); err != nil {
+	if err := s.DeleteRecord(testOrg, "example.com", rec.ID); err != nil {
 		t.Fatal(err)
 	}
-	records, _ = s.ListRecords("example.com")
+	records, _ = s.ListRecords(testOrg, "example.com")
 	if len(records) != 0 {
 		t.Fatalf("expected 0 records after delete, got %d", len(records))
 	}
@@ -102,30 +102,30 @@ func TestCRUDRecords(t *testing.T) {
 
 func TestCreateRecordInvalidType(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
+	if _, err := s.CreateZone(testOrg, "example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateRecord("example.com", "www", RecordType("BOGUS"), 300, "1.2.3.4", 0, false); err == nil {
+	if _, err := s.CreateRecord(testOrg, "example.com", "www", RecordType("BOGUS"), 300, "1.2.3.4", 0, false); err == nil {
 		t.Fatal("expected error for invalid record type")
 	}
 }
 
 func TestCreateRecordNoZone(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateRecord("nope.com", "www", TypeA, 300, "1.2.3.4", 0, false); err == nil {
+	if _, err := s.CreateRecord(testOrg, "nope.com", "www", TypeA, 300, "1.2.3.4", 0, false); err == nil {
 		t.Fatal("expected error for nonexistent zone")
 	}
 }
 
 func TestLookup(t *testing.T) {
 	s := NewStore()
-	if _, err := s.CreateZone("example.com", ProviderAuthoritative); err != nil {
+	if _, err := s.CreateZone(testOrg, "example.com", ProviderAuthoritative); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateRecord("example.com", "www", TypeA, 300, "1.2.3.4", 0, false); err != nil {
+	if _, err := s.CreateRecord(testOrg, "example.com", "www", TypeA, 300, "1.2.3.4", 0, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreateRecord("example.com", "@", TypeA, 300, "10.0.0.1", 0, false); err != nil {
+	if _, err := s.CreateRecord(testOrg, "example.com", "@", TypeA, 300, "10.0.0.1", 0, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,8 +153,8 @@ func TestLookup(t *testing.T) {
 
 func TestZoneNames(t *testing.T) {
 	s := NewStore()
-	s.CreateZone("a.com", ProviderAuthoritative)
-	s.CreateZone("b.com", ProviderAuthoritative)
+	s.CreateZone(testOrg, "a.com", ProviderAuthoritative)
+	s.CreateZone(testOrg, "b.com", ProviderAuthoritative)
 
 	names := s.ZoneNames()
 	if len(names) != 2 {

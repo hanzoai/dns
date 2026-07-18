@@ -174,7 +174,7 @@ func TestDispatch_CloudflareZone(t *testing.T) {
 	t.Setenv("HANZO_DNS_KMS_URL", kms.URL)
 
 	store := NewStore()
-	if _, err := store.CreateZone(testCFZoneName, ProviderCloudflare); err != nil {
+	if _, err := store.CreateZone(testOrg, testCFZoneName, ProviderCloudflare); err != nil {
 		t.Fatalf("CreateZone: %v", err)
 	}
 	router := apiRouter(store)
@@ -195,7 +195,7 @@ func TestDispatch_CloudflareZone(t *testing.T) {
 	}
 
 	// It was mirrored into the local store.
-	if _, err := store.GetRecord(testCFZoneName, testCFRecordID); err != nil {
+	if _, err := store.GetRecord(testOrg, testCFZoneName, testCFRecordID); err != nil {
 		t.Fatalf("expected mirror in store: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestDispatch_CloudflareZone(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("delete: status %d body %s", w.Code, w.Body.String())
 	}
-	if _, err := store.GetRecord(testCFZoneName, testCFRecordID); err == nil {
+	if _, err := store.GetRecord(testOrg, testCFZoneName, testCFRecordID); err == nil {
 		t.Fatal("expected mirror dropped after delete")
 	}
 }
@@ -225,7 +225,7 @@ func TestDispatch_CloudflareZone(t *testing.T) {
 // live in the store and resolve without any provider.
 func TestDispatch_AuthoritativeZone(t *testing.T) {
 	store := NewStore()
-	if _, err := store.CreateZone("native.test", ProviderAuthoritative); err != nil {
+	if _, err := store.CreateZone(testOrg, "native.test", ProviderAuthoritative); err != nil {
 		t.Fatalf("CreateZone: %v", err)
 	}
 	router := apiRouter(store)
@@ -245,6 +245,109 @@ func TestDispatch_AuthoritativeZone(t *testing.T) {
 	}
 }
 
+// TestCrossTenantIsolation is the regression for the store tenant-isolation
+// HIGH: org B must never list, read, mutate, or delete org A's zone or records.
+// Every cross-tenant access is a 404 (existence is not confirmed).
+func TestCrossTenantIsolation(t *testing.T) {
+	store := NewStore()
+	router := apiRouter(store)
+	const orgA, orgB = "orga", "orgb"
+
+	do := func(org, method, path, body string) *httptest.ResponseRecorder {
+		var r *http.Request
+		if body != "" {
+			r = httptest.NewRequest(method, path, strings.NewReader(body))
+		} else {
+			r = httptest.NewRequest(method, path, nil)
+		}
+		r = r.WithContext(ctxWithPrincipal(org, "bearer-"+org))
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+
+	if w := do(orgA, http.MethodPost, "/v1/dns/zones", `{"zone":"acme.example"}`); w.Code != http.StatusCreated {
+		t.Fatalf("orgA create zone: %d %s", w.Code, w.Body.String())
+	}
+	if w := do(orgA, http.MethodPost, "/v1/dns/zones/acme.example/records", `{"name":"www","type":"A","content":"1.1.1.1"}`); w.Code != http.StatusCreated {
+		t.Fatalf("orgA create record: %d %s", w.Code, w.Body.String())
+	}
+	var lr struct {
+		Records []Record `json:"records"`
+	}
+	_ = json.Unmarshal(do(orgA, http.MethodGet, "/v1/dns/zones/acme.example/records", "").Body.Bytes(), &lr)
+	if len(lr.Records) != 1 {
+		t.Fatalf("orgA records: %+v", lr)
+	}
+	recID := lr.Records[0].ID
+
+	// Org B sees no zones.
+	var lz struct {
+		Zones []Zone `json:"zones"`
+		Total int    `json:"total"`
+	}
+	_ = json.Unmarshal(do(orgB, http.MethodGet, "/v1/dns/zones", "").Body.Bytes(), &lz)
+	if lz.Total != 0 || len(lz.Zones) != 0 {
+		t.Fatalf("orgB must see no zones, got %+v", lz)
+	}
+
+	// Every cross-tenant access to org A's zone/records is 404.
+	cases := []struct{ method, path, body string }{
+		{http.MethodGet, "/v1/dns/zones/acme.example", ""},
+		{http.MethodDelete, "/v1/dns/zones/acme.example", ""},
+		{http.MethodGet, "/v1/dns/zones/acme.example/records", ""},
+		{http.MethodPost, "/v1/dns/zones/acme.example/records", `{"name":"evil","type":"A","content":"6.6.6.6"}`},
+		{http.MethodGet, "/v1/dns/zones/acme.example/records/" + recID, ""},
+		{http.MethodPut, "/v1/dns/zones/acme.example/records/" + recID, `{"content":"6.6.6.6"}`},
+		{http.MethodDelete, "/v1/dns/zones/acme.example/records/" + recID, ""},
+	}
+	for _, c := range cases {
+		if w := do(orgB, c.method, c.path, c.body); w.Code != http.StatusNotFound {
+			t.Errorf("orgB %s %s: expected 404, got %d %s", c.method, c.path, w.Code, w.Body.String())
+		}
+	}
+
+	// Org A's data is untouched after org B's attempts.
+	w := do(orgA, http.MethodGet, "/v1/dns/zones/acme.example/records/"+recID, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("orgA record should still exist: %d", w.Code)
+	}
+	var rec Record
+	_ = json.Unmarshal(w.Body.Bytes(), &rec)
+	if rec.Content != "1.1.1.1" {
+		t.Fatalf("orgA record mutated by orgB: %+v", rec)
+	}
+}
+
+// TestSyncIsOrgScoped confirms POST /v1/dns/sync is org-scoped: a caller cannot
+// overwrite another org's zone, and the owner is the ctx principal, not the body.
+func TestSyncIsOrgScoped(t *testing.T) {
+	store := NewStore()
+	sync := func(org, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodPost, "/v1/dns/sync", strings.NewReader(body)).
+			WithContext(ctxWithPrincipal(org, "b-"+org))
+		w := httptest.NewRecorder()
+		handleSync(w, r, store)
+		return w
+	}
+
+	if w := sync("orga", `{"zones":[{"zone":"shared.example","records":[{"name":"@","type":"A","content":"1.1.1.1"}]}]}`); w.Code != http.StatusOK {
+		t.Fatalf("orgA sync: %d %s", w.Code, w.Body.String())
+	}
+	// Org B cannot overwrite org A's zone.
+	if w := sync("orgb", `{"zones":[{"zone":"shared.example","records":[{"name":"@","type":"A","content":"6.6.6.6"}]}]}`); w.Code != http.StatusConflict {
+		t.Fatalf("orgB sync of orgA's zone: expected 409, got %d %s", w.Code, w.Body.String())
+	}
+	// Org A's record is intact and org B still can't see the zone.
+	recs, err := store.ListRecords("orga", "shared.example")
+	if err != nil || len(recs) != 1 || recs[0].Content != "1.1.1.1" {
+		t.Fatalf("orgA records after orgB attempt: %+v %v", recs, err)
+	}
+	if _, ok := store.ZoneProvider("orgb", "shared.example"); ok {
+		t.Fatal("orgB must not see orgA's zone")
+	}
+}
+
 func TestSnapshotDurability(t *testing.T) {
 	dir := t.TempDir()
 
@@ -253,10 +356,10 @@ func TestSnapshotDurability(t *testing.T) {
 	if err := EnableSnapshot(s1, dir); err != nil {
 		t.Fatalf("EnableSnapshot: %v", err)
 	}
-	if _, err := s1.CreateZone("persist.test", ProviderAuthoritative); err != nil {
+	if _, err := s1.CreateZone(testOrg, "persist.test", ProviderAuthoritative); err != nil {
 		t.Fatalf("CreateZone: %v", err)
 	}
-	if _, err := s1.CreateRecord("persist.test", "@", TypeA, 300, "9.9.9.9", 0, false); err != nil {
+	if _, err := s1.CreateRecord(testOrg, "persist.test", "@", TypeA, 300, "9.9.9.9", 0, false); err != nil {
 		t.Fatalf("CreateRecord: %v", err)
 	}
 	if _, err := os.Stat(dir + "/" + snapshotFile); err != nil {
@@ -271,7 +374,7 @@ func TestSnapshotDurability(t *testing.T) {
 	if got := s2.Lookup("persist.test.", "A"); len(got) != 1 || got[0].Content != "9.9.9.9" {
 		t.Fatalf("after restart Lookup = %+v", got)
 	}
-	if p, ok := s2.ZoneProvider("persist.test"); !ok || p != ProviderAuthoritative {
+	if p, ok := s2.ZoneProvider(testOrg, "persist.test"); !ok || p != ProviderAuthoritative {
 		t.Fatalf("provider after restart = %q, %v", p, ok)
 	}
 }
