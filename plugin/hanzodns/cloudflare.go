@@ -187,9 +187,11 @@ func (p *cloudflareProvider) CreateRecord(ctx context.Context, zoneID string, in
 	return rec.toProvider(), nil
 }
 
-func (p *cloudflareProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, in RecordInput) (ProviderRecord, error) {
+func (p *cloudflareProvider) UpdateRecord(ctx context.Context, zoneID, recordID string, patch RecordPatch) (ProviderRecord, error) {
 	var rec cfRecord
-	if err := p.cfDo(ctx, http.MethodPut, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), cfRecordBody(in), &rec); err != nil {
+	// PATCH applies only the provided fields, leaving the rest of the upstream
+	// record untouched.
+	if err := p.cfDo(ctx, http.MethodPatch, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), cfPatchBody(patch), &rec); err != nil {
 		return ProviderRecord{}, err
 	}
 	return rec.toProvider(), nil
@@ -199,8 +201,8 @@ func (p *cloudflareProvider) DeleteRecord(ctx context.Context, zoneID, recordID 
 	return p.cfDo(ctx, http.MethodDelete, "/zones/"+url.PathEscape(zoneID)+"/dns_records/"+url.PathEscape(recordID), nil, nil)
 }
 
-// cfRecordBody builds the Cloudflare create/update payload. proxied (the orange
-// cloud) is always sent; ttl and priority are included only when set.
+// cfRecordBody builds the Cloudflare create payload. proxied (the orange cloud)
+// is always sent; ttl and priority are included only when set.
 func cfRecordBody(in RecordInput) map[string]any {
 	m := map[string]any{
 		"type":    in.Type,
@@ -213,6 +215,32 @@ func cfRecordBody(in RecordInput) map[string]any {
 	}
 	if in.Priority > 0 {
 		m["priority"] = in.Priority
+	}
+	return m
+}
+
+// cfPatchBody builds a Cloudflare PATCH payload from a partial record patch —
+// only the fields the caller set are included, so unspecified fields keep their
+// current upstream value.
+func cfPatchBody(patch RecordPatch) map[string]any {
+	m := map[string]any{}
+	if patch.Type != nil {
+		m["type"] = string(*patch.Type)
+	}
+	if patch.Name != nil {
+		m["name"] = *patch.Name
+	}
+	if patch.Content != nil {
+		m["content"] = *patch.Content
+	}
+	if patch.TTL != nil {
+		m["ttl"] = *patch.TTL
+	}
+	if patch.Priority != nil {
+		m["priority"] = *patch.Priority
+	}
+	if patch.Proxied != nil {
+		m["proxied"] = *patch.Proxied
 	}
 	return m
 }
