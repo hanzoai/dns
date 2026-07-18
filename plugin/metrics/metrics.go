@@ -23,7 +23,7 @@ import (
 type Metrics struct {
 	Next plugin.Handler
 	Addr string
-	Reg  *metric.Registry
+	Reg  metric.Registry
 
 	ln      net.Listener
 	lnSetup bool
@@ -44,7 +44,7 @@ type Metrics struct {
 func New(addr string) *Metrics {
 	met := &Metrics{
 		Addr:    addr,
-		Reg:     metric.DefaultRegisterer.(*metric.Registry),
+		Reg:     metric.DefaultRegistry,
 		zoneMap: make(map[string]struct{}),
 		plugins: pluginList(caddy.ListPlugins()),
 	}
