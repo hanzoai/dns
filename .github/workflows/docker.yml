@@ -1,37 +1,12 @@
-name: Docker Release
-
+name: Docker Release (disabled — native pipeline)
+# The canonical deploy pipeline is .hanzo/workflows/deploy.yml:
+# Hanzo Git push → act_runner (in-cluster) → BuildKit builds ./Dockerfile →
+# ghcr.io/hanzoai/dns:<sha> → kubectl patch app/dns → operator reconcile.
+# GitHub is a mirror; image build/push no longer happens here.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
-    inputs:
-      release:
-        description: "Release (e.g., v1.9.0)"
-        required: true
-
-permissions:
-  contents: read
-
 jobs:
-  docker-release:
-    runs-on: hanzo-build-linux-amd64
-    env:
-      RELEASE: ${{ github.event.inputs.release || github.event.release.tag_name }}
+  notice:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          persist-credentials: false
-      - name: Build Docker Images
-        run: make VERSION=${RELEASE:1} DOCKER=coredns -f Makefile.docker release
-      - name: Show Docker Images
-        run: docker images
-      - name: Docker login
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Publish Docker Images
-        run: make VERSION=${RELEASE:1} DOCKER=coredns -f Makefile.docker docker-push
-        env:
-          DOCKER_LOGIN: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - run: echo "native pipeline is .hanzo/workflows/deploy.yml; GitHub is a mirror"
