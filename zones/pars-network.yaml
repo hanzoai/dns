@@ -27,10 +27,12 @@ records:
     content: "134.199.138.27"
     proxied: false
 
-  - type: A
-    name: iam
-    content: "134.199.138.27"
-    proxied: false
+  # NO `iam` record — same retirement as zoo.network's. Pars's identity origin
+  # is pars.id, aliased by id.pars.network; both serve the login SPA at / and
+  # the IAM API at /v1/iam, /oauth, /.well-known. There is no iam.<brand> host
+  # in the design. `iam` pointed at the lux-k8s LB 134.199.138.27, which had no
+  # config for it, so it served CN=INGRESS DEFAULT CERT and hard-failed TLS.
+  # Retired to NXDOMAIN. Do not re-add it.
 
   - type: A
     name: mpc-api

@@ -27,10 +27,17 @@ records:
     content: "134.199.138.27"
     proxied: false
 
-  - type: A
-    name: iam
-    content: "134.199.138.27"
-    proxied: false
+  # NO `iam` record. Zoo's identity origin is zoolabs.id (login SPA at / plus
+  # the IAM API at /v1/iam, /oauth, /.well-known; discovery reports
+  # issuer=https://zoolabs.id). id.zoo.network is its alias. There is no
+  # iam.<brand> host in the design — iam.hanzo.ai is the one legacy IAM host,
+  # kept because the shared Google/GitHub OAuth clients register exactly one
+  # callback against it.
+  #
+  # `iam` used to be an A record at the lux-k8s LB 134.199.138.27, a cluster
+  # that had no config for the host at all — so it answered every handshake
+  # with CN=INGRESS DEFAULT CERT and browsers hard-failed. Retired to NXDOMAIN,
+  # the same way zoo.id was. Do not re-add it.
 
   - type: A
     name: mpc-api
