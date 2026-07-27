@@ -1,6 +1,6 @@
 module github.com/hanzoai/dns-operator
 
-go 1.23.0
+go 1.26.5
 
 require (
 	k8s.io/apimachinery v0.31.0
