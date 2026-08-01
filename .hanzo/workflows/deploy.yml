@@ -50,7 +50,11 @@ jobs:
         run: |
           set -euo pipefail
           git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
-          go env -w GOPRIVATE='github.com/hanzoai/*,github.com/luxfi/*'
+          # luxfi dropped on purpose: it is public, and GOPRIVATE would send Go to
+          # direct git, past the checksum database. luxfi re-cuts published tags, so
+          # direct then disagrees with go.sum and the build dies with SECURITY ERROR.
+          # All 5 luxfi modules here were verified present on proxy.golang.org.
+          go env -w GOPRIVATE='github.com/hanzoai/*'
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o coredns .
           ls -l coredns
 
