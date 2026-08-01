@@ -1,4 +1,10 @@
-FROM golang:1.23 AS builder
+FROM golang:1.26.5 AS builder
+
+# The official golang images set GOTOOLCHAIN=local, so a base older than the
+# `go` directive in operator/go.mod fails the build outright rather than
+# fetching a toolchain. `auto` lets a future go.mod bump resolve itself against
+# the checksum database instead of hard-failing here.
+ENV GOTOOLCHAIN=auto
 
 # CA certs + tzdata + nonroot user/group records for the scratch runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
