@@ -1,0 +1,9 @@
+# No images: on purpose. The Dockerfile is a PACKAGING file — `COPY coredns
+# /coredns` onto debian-slim — so handing it to buildx with no prepared binary
+# fails on "/coredns": not found. The image lane lives in .hanzo/workflows/
+# deploy.yml, which builds the binary first. This is the gate that repo has
+# never had: `make` cannot run it (the Makefile pins GOTOOLCHAIN from
+# .go-version = 1.26.3 while go.mod requires >= 1.26.4).
+test:
+  - name: build
+    run: go build ./... && go test ./...
