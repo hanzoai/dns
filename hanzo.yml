@@ -4,6 +4,17 @@
 # deploy.yml, which builds the binary first. This is the gate that repo has
 # never had: `make` cannot run it (the Makefile pins GOTOOLCHAIN from
 # .go-version = 1.26.3 while go.mod requires >= 1.26.4).
+#
+# The tags are the Makefile's GOTAGS, which is what the shipping binary is
+# built with. They are not decoration: luxfi/metric is `//go:build !metrics`
+# no-ops by default, so without `metrics` every counter this server keeps is a
+# discard. Nine packages failed that way — metrics, metrics/vars, kubernetes
+# object counters — all of them testing a metric that could not record.
+# Building the gate differently from the binary is how that stayed invisible.
 test:
   - name: build
-    run: go build ./... && go test ./...
+    run: |
+      set -e
+      TAGS="grpcnotrace metrics"
+      go build -tags "$TAGS" ./...
+      go test -tags "$TAGS" ./...

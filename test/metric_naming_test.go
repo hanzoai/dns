@@ -12,7 +12,7 @@ import (
 
 	"github.com/coredns/coredns/plugin"
 
-	metric "github.com/luxfi/metric"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil/promlint"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -63,7 +63,7 @@ func (w *validMetricWalker) walk(path string, info os.FileInfo, _ error) error {
 	if err != nil {
 		return err
 	}
-	l := &metric{}
+	l := &visitor{}
 	ast.Walk(l, f)
 	if l.Metric != nil {
 		w.Metrics = append(w.Metrics, l.Metric)
@@ -71,11 +71,14 @@ func (w *validMetricWalker) walk(path string, info os.FileInfo, _ error) error {
 	return nil
 }
 
-type metric struct {
+// visitor collects the metric family declared in one parsed file. Named for
+// what it does — it is an ast.Visitor — because `metric` is the package this
+// file, and every other file here, imports from luxfi.
+type visitor struct {
 	Metric *dto.MetricFamily
 }
 
-func (l *metric) Visit(n ast.Node) ast.Visitor {
+func (l *visitor) Visit(n ast.Node) ast.Visitor {
 	if n == nil {
 		return nil
 	}
@@ -153,7 +156,11 @@ func (l *metric) Visit(n ast.Node) ast.Visitor {
 		return l
 	}
 
-	metricName := metric.BuildFQName(plugin.Namespace, subsystem, name)
+	// prometheus's own join, because that is exactly what is under test here:
+	// the name goes straight to promlint as a dto.MetricFamily, and luxfi/metric
+	// has no three-part equivalent (AppendNamespace takes a namespace and a name,
+	// not a subsystem between them).
+	metricName := prometheus.BuildFQName(plugin.Namespace, subsystem, name)
 	l.Metric = &dto.MetricFamily{
 		Name: &metricName,
 		Help: &help,

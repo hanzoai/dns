@@ -218,6 +218,12 @@ func (w *testImportOrderingWalker) walk(path string, info os.FileInfo, _ error) 
 	if strings.HasPrefix(path, "../pb/") {
 		return nil
 	}
+	// operator/ is its own module (github.com/hanzoai/dns-operator) and imports
+	// no coredns, so the std -> coredns -> 3rd shape has no middle group to
+	// check for. Same reason pb/ and vendor/ are skipped above.
+	if strings.HasPrefix(path, "../operator/") {
+		return nil
+	}
 
 	fs := token.NewFileSet()
 	f, err := parser.ParseFile(fs, path, nil, parser.AllErrors)
