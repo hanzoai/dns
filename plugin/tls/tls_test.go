@@ -101,6 +101,12 @@ func TestTLSKeyLog(t *testing.T) {
 	})
 
 	t.Run("Bad Path", func(t *testing.T) {
+		// Root writes into a 0000 directory regardless of its mode, so there is
+		// no error to expect. CI runs as root in a container.
+		if os.Geteuid() == 0 {
+			t.Skip("running as root: file permissions deny nothing")
+		}
+
 		tmpDir := t.TempDir()
 		os.Chmod(tmpDir, 0000)
 		input := "tls test_cert.pem test_key.pem test_ca.pem {\nkeylog " + filepath.Join(tmpDir, "tls.log") + "\n}"

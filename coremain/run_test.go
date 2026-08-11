@@ -159,6 +159,12 @@ func TestDefaultLoader(t *testing.T) {
 			t.Fatalf("Failed to change permissions: %v", err)
 		}
 
+		// Root reads a 0000 file regardless of its mode, so there is no error
+		// to expect. CI runs as root in a container.
+		if os.Geteuid() == 0 {
+			t.Skip("running as root: file permissions deny nothing")
+		}
+
 		input, err = defaultLoader("dns")
 		if err == nil {
 			t.Error("Expected error for unreadable Corefile but got none")
