@@ -74,7 +74,7 @@ func TestMetricsRefused(t *testing.T) {
 }
 
 // getBucketCount extracts the count for a specific bucket from a metric family
-func getBucketCount(mf *test.MetricFamily, bucketLabel string) (int, error) {
+func getBucketCount(mf *test.MetricFamily, zone, bucketLabel string) (int, error) {
 	if mf == nil {
 		return 0, fmt.Errorf("metric family is nil")
 	}
@@ -82,13 +82,31 @@ func getBucketCount(mf *test.MetricFamily, bucketLabel string) (int, error) {
 		return 0, fmt.Errorf("metric family %s has no metrics", mf.Name)
 	}
 
-	// mf.Metrics[0] is an interface{} containing an unexported 'histogram' struct from plugin/test.
-	metricPoint := mf.Metrics[0]
-	val := reflect.ValueOf(metricPoint)
-
-	// Check if the underlying type is a struct (as histogram is)
-	if val.Kind() != reflect.Struct {
-		return 0, fmt.Errorf("metric point for %s is not a struct, but %s", mf.Name, val.Kind())
+	// Take the series for THIS test's zone rather than whichever sorts first.
+	// The registry is process-wide, so earlier tests in the package leave their
+	// own series behind — one of them serves a zone named "dropped" — and
+	// reading Metrics[0] measured that instead, which is why this passed alone
+	// and failed in the suite.
+	//
+	// The elements are an unexported histogram struct from plugin/test, so both
+	// Labels and Buckets come out through reflection.
+	var val reflect.Value
+	for _, point := range mf.Metrics {
+		v := reflect.ValueOf(point)
+		if v.Kind() != reflect.Struct {
+			return 0, fmt.Errorf("metric point for %s is not a struct, but %s", mf.Name, v.Kind())
+		}
+		labels, ok := v.FieldByName("Labels").Interface().(map[string]string)
+		if !ok {
+			return 0, fmt.Errorf("'Labels' field for %s is not a map[string]string", mf.Name)
+		}
+		if labels["zone"] == zone {
+			val = v
+			break
+		}
+	}
+	if !val.IsValid() {
+		return 0, fmt.Errorf("metric family %s has no series for zone %q", mf.Name, zone)
 	}
 
 	// Access the 'Buckets' field, which should be map[string]string
@@ -116,7 +134,7 @@ func getBucketCount(mf *test.MetricFamily, bucketLabel string) (int, error) {
 }
 
 // extractRequestSizeBucketCounts extracts bucket counts from DNS request size metrics
-func extractRequestSizeBucketCounts(t *testing.T, metrics []*test.MetricFamily, label string) (int, int, error) {
+func extractRequestSizeBucketCounts(t *testing.T, metrics []*test.MetricFamily, zone, label string) (int, int, error) {
 	t.Helper()
 	var countBelow100, countAbove100 int
 	var err error
@@ -124,11 +142,11 @@ func extractRequestSizeBucketCounts(t *testing.T, metrics []*test.MetricFamily, 
 	for _, mf := range metrics {
 		if strings.Contains(mf.Name, "coredns_dns_request_size_bytes") {
 			t.Logf("  %s: %v", mf.Name, mf.Metrics)
-			countBelow100, err = getBucketCount(mf, "100")
+			countBelow100, err = getBucketCount(mf, zone, "100")
 			if err != nil {
 				return 0, 0, fmt.Errorf("%s: error getting bucket count for 100: %v", label, err)
 			}
-			countAbove100, err = getBucketCount(mf, "1023")
+			countAbove100, err = getBucketCount(mf, zone, "1023")
 			if err != nil {
 				return 0, 0, fmt.Errorf("%s: error getting bucket count for 1023: %v", label, err)
 			}
@@ -173,7 +191,7 @@ func TestMetricsRewriteRequestSize(t *testing.T) {
 	metricsWithoutRewrite := test.Scrape("http://" + metrics.ListenAddr + "/metrics")
 
 	t.Log("Available metrics without rewrite:")
-	countBelow100withoutRewrite, countAbove100withoutRewrite, err := extractRequestSizeBucketCounts(t, metricsWithoutRewrite, "without rewrite")
+	countBelow100withoutRewrite, countAbove100withoutRewrite, err := extractRequestSizeBucketCounts(t, metricsWithoutRewrite, ".", "without rewrite")
 	if err != nil {
 		t.Error(err)
 	}
@@ -206,7 +224,7 @@ func TestMetricsRewriteRequestSize(t *testing.T) {
 	metricsWithRewrite := test.Scrape("http://" + metrics.ListenAddr + "/metrics")
 
 	t.Log("Available metrics with rewrite:")
-	countBelow100withRewrite, countAbove100withRewrite, err := extractRequestSizeBucketCounts(t, metricsWithRewrite, "with rewrite")
+	countBelow100withRewrite, countAbove100withRewrite, err := extractRequestSizeBucketCounts(t, metricsWithRewrite, ".", "with rewrite")
 	if err != nil {
 		t.Error(err)
 	}
