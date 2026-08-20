@@ -45,16 +45,18 @@ jobs:
           cache: true
 
       - name: Build coredns
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
-          git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
-          # luxfi dropped on purpose: it is public, and GOPRIVATE would send Go to
-          # direct git, past the checksum database. luxfi re-cuts published tags, so
-          # direct then disagrees with go.sum and the build dies with SECURITY ERROR.
-          # All 5 luxfi modules here were verified present on proxy.golang.org.
-          go env -w GOPRIVATE='github.com/hanzoai/*'
+          # No GOPRIVATE and no git credential, and the reason is the same one
+          # that already kept luxfi out of that pattern: GOPRIVATE sends Go to
+          # direct git, past the checksum database, and luxfi re-cuts published
+          # tags, so direct then disagrees with go.sum and the build dies with
+          # SECURITY ERROR. All 5 luxfi modules here are on proxy.golang.org.
+          #
+          # `github.com/hanzoai/*` was the other half of that pattern and there
+          # is no such module in this graph — go.mod and go.sum name none, this
+          # module is github.com/coredns/coredns. So the pattern matched nothing
+          # and the credential paired with it was never read by anything.
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o coredns .
           ls -l coredns
 
@@ -75,9 +77,9 @@ jobs:
           platforms: linux/amd64
           push: true
           provenance: false
+          # No `secrets:`. The Dockerfile has no Go stage — it COPYs the binary
+          # this job already built — so it mounts nothing and asks for nothing.
           tags: ghcr.io/hanzoai/dns:${{ steps.meta.outputs.tag }}
-          secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.GH_PAT }}
 
       # build-push-action can exit 0 before the manifest resolves, so a green run
       # could still mean a future ImagePullBackOff. Prove it pulls.
