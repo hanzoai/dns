@@ -1,3 +1,10 @@
+> **Retired — this is a stale copy of `hanzoai/dns`.**
+>
+> Every branch here is reachable from `hanzoai/dns` — 14 refs, not one commit it lacks — and this copy has no push mirror, so anything committed here reached nothing.
+>
+> It also declared `ghcr.io/hanzoai/dns`, the tag `hanzoai/dns` owns, so a push here
+> could have published over it. That declaration is removed.
+
 <p align="center"><img src=".github/hero.svg" alt="dns" width="880"></p>
 
 # Hanzo DNS
