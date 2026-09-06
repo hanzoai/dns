@@ -26,7 +26,10 @@ jobs:
   build:
     # Must name a label a runner ACTUALLY advertises. The git-runners offer
     # hanzo-build-linux-amd64; a label nothing offers does not fail, it queues
-    # until the 24h timeout — silence, not an error.
+    # until the 24h timeout — silence, not an error. That is also why the arm64
+    # half below is built here rather than on hanzo-build-linux-arm64: the label
+    # is declared (universe/infra/runners/spark/config.yaml) but no runner
+    # carrying it has been online, and nothing here needs a native arm64 host.
     runs-on: [hanzo-build-linux-amd64]
     steps:
       - uses: actions/checkout@v4
@@ -34,31 +37,10 @@ jobs:
       - id: meta
         run: echo "tag=sha-$(echo "$GITHUB_SHA" | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
-      # Dockerfile is a PACKAGING file — `COPY coredns /coredns` on debian-slim.
-      # Handing it to buildx with no prepared binary fails with
-      #   failed to calculate checksum of ref ...: "/coredns": not found
-      # so the Go build has to happen in the job first. Static, because the
-      # runtime stage is scratch-like with no libc.
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-
-      - name: Build coredns
-        run: |
-          set -euo pipefail
-          # No GOPRIVATE and no git credential, and the reason is the same one
-          # that already kept luxfi out of that pattern: GOPRIVATE sends Go to
-          # direct git, past the checksum database, and luxfi re-cuts published
-          # tags, so direct then disagrees with go.sum and the build dies with
-          # SECURITY ERROR. All 5 luxfi modules here are on proxy.golang.org.
-          #
-          # `github.com/hanzoai/*` was the other half of that pattern and there
-          # is no such module in this graph — go.mod and go.sum name none, this
-          # module is github.com/coredns/coredns. So the pattern matched nothing
-          # and the credential paired with it was never read by anything.
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o coredns .
-          ls -l coredns
 
       - uses: docker/setup-buildx-action@v3
         with: { driver: docker-container, driver-opts: network=host }
@@ -70,25 +52,72 @@ jobs:
           username: ${{ secrets.GHCR_USER }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          push: true
-          provenance: false
-          # No `secrets:`. The Dockerfile has no Go stage — it COPYs the binary
-          # this job already built — so it mounts nothing and asks for nothing.
-          tags: ghcr.io/hanzoai/dns:${{ steps.meta.outputs.tag }}
-
-      # build-push-action can exit 0 before the manifest resolves, so a green run
-      # could still mean a future ImagePullBackOff. Prove it pulls.
-      - name: Verify the pushed image resolves
+      # One image per architecture, with the Go build INSIDE the same loop — that
+      # coupling is the whole point. Dockerfile is a PACKAGING file (`COPY coredns
+      # /coredns` on debian-slim), so the binary's architecture is chosen by this
+      # job and the build has no say in it. Handing buildx both platforms in one
+      # invocation would therefore stamp the SAME binary into both manifests: the
+      # arm64 tag pulls cleanly and then dies with `exec format error`, which is
+      # worse than having no arm64 image, because it fails at run time on a host
+      # that had every reason to trust the tag.
+      #
+      # No QEMU, and none is needed. Go cross-compiles both binaries here
+      # (CGO_ENABLED=0, static — the runtime stage is scratch-like with no libc),
+      # the Dockerfile's build stage is pinned to $BUILDPLATFORM so apt/useradd/
+      # setcap run x86 either way, and the runtime stage is FROM scratch with
+      # COPYs only. Nothing aarch64 ever executes. Add binfmt the day the runtime
+      # stage grows a RUN.
+      #
+      # No GOPRIVATE and no git credential, and the reason is the same one that
+      # already kept luxfi out of that pattern: GOPRIVATE sends Go to direct git,
+      # past the checksum database, and luxfi re-cuts published tags, so direct
+      # then disagrees with go.sum and the build dies with SECURITY ERROR. All 5
+      # luxfi modules here are on proxy.golang.org.
+      #
+      # No `secrets:` either. The Dockerfile has no Go stage — it COPYs the binary
+      # this job already built — so it mounts nothing and asks for nothing.
+      - name: Build and push one image per architecture
         run: |
           set -euo pipefail
           img="ghcr.io/hanzoai/dns:${{ steps.meta.outputs.tag }}"
-          for i in 1 2 3 4 5 6; do
-            docker buildx imagetools inspect "$img" >/dev/null 2>&1 && { echo "resolved $img"; exit 0; }
-            sleep 5
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" \
+              go build -trimpath -ldflags="-s -w" -o coredns .
+            file coredns 2>/dev/null || ls -l coredns
+            docker buildx build \
+              --platform "linux/${arch}" \
+              --provenance=false \
+              --push \
+              -f ./Dockerfile \
+              -t "${img}-${arch}" \
+              .
           done
-          echo "::error::pushed image never resolved: $img"; exit 1
+
+      # Registry-side only: imagetools reads the two per-arch manifests and
+      # writes a list pointing at both. The arch-neutral tag is the one a
+      # universe CR pins, so it is the one that has to be the list.
+      - name: Join both architectures under the release tag
+        run: |
+          set -euo pipefail
+          img="ghcr.io/hanzoai/dns:${{ steps.meta.outputs.tag }}"
+          docker buildx imagetools create -t "$img" "${img}-amd64" "${img}-arm64"
+
+      # Two claims in one check. A push can exit 0 before the manifest resolves,
+      # so a green run could still mean a future ImagePullBackOff — inspect fails
+      # if the tag is not there. And a list with ONE entry pulls fine on the arch
+      # that built it and fails everywhere else, which is exactly the state this
+      # workflow is leaving; counting the platforms is what makes "multi-arch" a
+      # fact rather than an intention.
+      - name: Prove the pushed tag carries BOTH architectures
+        run: |
+          set -euo pipefail
+          img="ghcr.io/hanzoai/dns:${{ steps.meta.outputs.tag }}"
+          got=$(docker buildx imagetools inspect "$img" \
+            --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')
+          echo "$img -> ${got}"
+          for want in linux/amd64 linux/arm64; do
+            case " $got " in
+              *" $want "*) ;;
+              *) echo "::error::$img does not carry $want"; exit 1 ;;
+            esac
+          done
