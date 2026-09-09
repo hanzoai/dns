@@ -3,7 +3,7 @@
 # fails on "/coredns": not found. The image lane lives in .hanzo/workflows/
 # deploy.yml, which builds the binary first. This is the gate that repo has
 # never had: `make` cannot run it (the Makefile pins GOTOOLCHAIN from
-# .go-version = 1.26.3 while go.mod requires >= 1.26.4).
+# .go-version = 1.26.8 while go.mod requires >= 1.26.8).
 #
 # The tags are the Makefile's GOTAGS, which is what the shipping binary is
 # built with. They are not decoration: luxfi/metric is `//go:build !metrics`
