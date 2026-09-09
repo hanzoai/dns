@@ -1,4 +1,4 @@
-FROM golang:1.26.5 AS builder
+FROM golang:1.26.8 AS builder
 
 # The official golang images set GOTOOLCHAIN=local, so a base older than the
 # `go` directive in operator/go.mod fails the build outright rather than
