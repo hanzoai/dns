@@ -9,6 +9,8 @@
 
 # Hanzo DNS
 
+[![Open in Hanzo](https://hanzo.app/badges/open-in-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/dns&ref=main&action=open) [![Edit with Hanzo](https://hanzo.app/badges/edit-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/dns&ref=main&action=edit) [![Deploy with Hanzo](https://hanzo.app/badges/deploy-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/dns&ref=main&action=deploy)
+
 **Hanzo DNS** is Hanzo's DNS server/forwarder, built on [CoreDNS](https://coredns.io) (a Cloud Native Computing Foundation graduated project, Apache-2.0). Hanzo DNS retains CoreDNS's upstream license and attribution; the Go module path remains `github.com/coredns/coredns`. The upstream documentation follows.
 
 ---
