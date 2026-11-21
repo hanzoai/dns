@@ -5,9 +5,10 @@ ARG GO_IMAGE=ghcr.io/hanzoai/mirror/golang:1.27.1-alpine@sha256:cf6fca6641884b84
 # the commit, and a build needs no prepared input beside the source.
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS compile
 ARG TARGETOS TARGETARCH
-# git: luxfi/crypto's tag is not on the public module proxy, so Go resolves it from the
-# repository, and go.sum pins the hash.
-RUN apk add --no-cache git
+# git: luxfi/crypto is not on the public module proxy, so Go resolves it from its repository,
+# which github.com refuses without a credential and the forge serves openly; go.sum pins the hash.
+RUN apk add --no-cache git \
+    && git config --global url."https://git.hanzo.ai/luxfi/".insteadOf "https://github.com/luxfi/"
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
