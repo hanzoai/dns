@@ -1,4 +1,16 @@
 ARG DEBIAN_IMAGE=debian:stable-slim
+ARG GO_IMAGE=ghcr.io/hanzoai/mirror/golang:1.27.1-alpine@sha256:cf6fca6641884b8433441b2b0652976f975e1d0fdd26d177eaaf8596087f3125
+
+# The binary is compiled here, for the platform being built: the image is a pure function of
+# the commit, and a build needs no prepared input beside the source.
+FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS compile
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -tags "grpcnotrace metrics" -trimpath -ldflags="-s -w" -o /coredns .
 
 FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS build
 ARG DEBIAN_FRONTEND=noninteractive
@@ -7,7 +19,7 @@ RUN apt-get -qq update \
     && rm -rf /var/lib/apt/lists/*
 # Create nonroot user/group records (uid/gid 65532) for the scratch runtime.
 RUN groupadd -g 65532 -r nonroot && useradd -u 65532 -r -g nonroot nonroot
-COPY coredns /coredns
+COPY --from=compile /coredns /coredns
 RUN setcap cap_net_bind_service=+ep /coredns
 
 # Scratch runtime — coredns is a static Go binary; bind capability on
