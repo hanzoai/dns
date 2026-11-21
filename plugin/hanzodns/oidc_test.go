@@ -126,6 +126,36 @@ func TestWrongIssuer(t *testing.T) {
 	}
 }
 
+// Both platform issuers are admitted while the issuer moves; an organization's own
+// issuer (a path under the second) and a near miss are refused.
+func TestIssuerListAdmitsEachExactIssuer(t *testing.T) {
+	key, jwkKey := generateTestKey()
+	list := "https://hanzo.id, https://hanzo.ai"
+
+	for iss, admitted := range map[string]bool{
+		"https://hanzo.id":          true,
+		"https://hanzo.ai":          true,
+		"https://hanzo.ai/acme":     false,
+		"https://hanzo.ai/":         false,
+		"https://hanzo.id.evil.com": false,
+	} {
+		token := signJWT(key, map[string]interface{}{
+			"alg": "RS256",
+			"kid": "test-key-1",
+		}, map[string]interface{}{
+			"iss": iss,
+			"exp": time.Now().Add(time.Hour).Unix(),
+		})
+		_, err := validateToken(token, []jwk{jwkKey}, list, "")
+		if admitted && err != nil {
+			t.Errorf("issuer %q refused: %v", iss, err)
+		}
+		if !admitted && err == nil {
+			t.Errorf("issuer %q admitted", iss)
+		}
+	}
+}
+
 func TestMissingToken(t *testing.T) {
 	_, err := validateToken("", nil, "https://hanzo.id", "")
 	if err == nil {

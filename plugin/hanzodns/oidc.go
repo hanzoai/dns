@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -42,15 +43,17 @@ func BearerFromContext(ctx context.Context) string {
 	return v
 }
 
-// oidcMiddleware validates OIDC JWT tokens when HANZO_DNS_OIDC_ISSUER is set.
+// oidcMiddleware validates OIDC JWT tokens when HANZO_DNS_OIDC_ISSUER is set. The
+// variable is a comma-separated list of exact issuers; keys come from the first.
 func oidcMiddleware(next http.Handler) http.Handler {
 	issuer := os.Getenv("HANZO_DNS_OIDC_ISSUER")
-	if issuer == "" {
+	issuers := splitList(issuer)
+	if len(issuers) == 0 {
 		return next
 	}
 
 	audience := os.Getenv("HANZO_DNS_OIDC_AUDIENCE")
-	cache := &jwksCache{issuer: issuer}
+	cache := &jwksCache{issuer: issuers[0]}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
@@ -297,12 +300,12 @@ func validateToken(tokenStr string, keys []jwk, issuer, audience string) (*jwtCl
 	if time.Now().Unix() >= c.Expiry {
 		return nil, fmt.Errorf("token expired")
 	}
-	if c.Issuer != issuer {
-		return nil, fmt.Errorf("invalid issuer: got %q, want %q", c.Issuer, issuer)
+	if !slices.Contains(splitList(issuer), c.Issuer) {
+		return nil, fmt.Errorf("invalid issuer: got %q, want one of %q", c.Issuer, issuer)
 	}
 	// When an audience allowlist is configured, the token must carry at least one
 	// of the allowed audiences — so a token minted for another service is refused.
-	if allow := splitAudience(audience); len(allow) > 0 && !c.Audience.matchesAny(allow) {
+	if allow := splitList(audience); len(allow) > 0 && !c.Audience.matchesAny(allow) {
 		return nil, fmt.Errorf("invalid audience")
 	}
 
@@ -339,8 +342,8 @@ func (a audienceClaim) matchesAny(allow []string) bool {
 	return false
 }
 
-// splitAudience parses a comma-separated audience allowlist, trimming blanks.
-func splitAudience(s string) []string {
+// splitList parses a comma-separated allowlist, trimming blanks.
+func splitList(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {
 		if p = strings.TrimSpace(p); p != "" {
